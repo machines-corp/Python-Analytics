@@ -1,0 +1,30 @@
+.git
+.gitignore
+Dockerfile
+docker-compose*.yml
+nginx/*.conf
+
+# Entornos y cachés
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+.venv/
+venv/
+env/
+ENV/
+node_modules/
+
+# Archivos que no hacen falta dentro de la imagen
+.env
+.env.*
+!.env.example
+
+# Directorios grandes de salida
+staticfiles/
+media/

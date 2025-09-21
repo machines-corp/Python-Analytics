@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Entornos
+.venv/
+venv/
+env/
+ENV/
+
+# Django
+staticfiles/
+media/
+*.sqlite3
+
+# VSCode / IDE
+.vscode/
+.idea/
+*.swp
+
+# Migraciones auto-creadas opcionalmente (si no quieres trackearlas aún)
+# **/migrations/**/__pycache__/
+# **/migrations/**/0*.py
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Node (si tienes front integrado)
+node_modules/
+.yarn/
+*.log
+
+# Docker
+*.pid
