@@ -20,3 +20,9 @@ class Job(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self): return f"{self.title} - {self.role}"
+
+class Conversation(models.Model):
+
+    state = models.JSONField(default=dict, blank=True)     
+    history = models.JSONField(default=list, blank=True)   
+    created_at = models.DateTimeField(auto_now_add=True)
