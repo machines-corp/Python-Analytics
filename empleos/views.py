@@ -1,8 +1,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .nlp import parse_prompt, parse_simple_response, parse_complex_intent, parse_job_selection, get_industries_from_db, get_modalities_from_db, get_areas_from_db, get_seniorities_from_db, get_locations_from_db, get_roles_from_db
-from .engine import decide_jobs
+from .nlp import parse_prompt, parse_simple_response, parse_complex_intent, parse_job_selection, parse_more_jobs_intent, get_industries_from_db, get_modalities_from_db, get_areas_from_db, get_seniorities_from_db, get_locations_from_db, get_roles_from_db
+from .engine import decide_jobs, get_job_pagination_info
 from .models import JobPosting, Conversation
 from django.db import ProgrammingError, OperationalError
 from .serializers import ConversationSerializer
@@ -48,6 +48,12 @@ def _merge_state_with_prompt(state: dict, prompt: str):
     job_selection = parse_job_selection(prompt)
     if job_selection.get("action") == "select_job":
         return {}, {}, None, job_selection  # Retornar información de selección
+    
+    # Verificar si pide más empleos o diferentes empleos
+    more_jobs_intent = parse_more_jobs_intent(prompt)
+    if more_jobs_intent.get("action") == "more_jobs":
+        # NO modificar el estado cuando se piden más empleos
+        return {}, {}, None, more_jobs_intent  # Retornar información de solicitud de más empleos
     
     # Luego intentar parsing de intenciones complejas
     complex_intent = parse_complex_intent(prompt)
@@ -188,6 +194,49 @@ class ChatMessage(APIView):
         # Intenta mapear automáticamente lo que escribió al estado
         include, exclude, encouraging_response, job_selection = _merge_state_with_prompt(conv.state, text)
 
+        # Si el usuario está pidiendo más empleos
+        if job_selection and job_selection.get("action") == "more_jobs":
+            # Obtener información de paginación
+            include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
+            pagination_info = get_job_pagination_info(include, exclude, sal_min, currency)
+            
+            # Obtener el offset actual (si existe)
+            current_offset = conv.state.get("current_offset", 0)
+            variety = job_selection.get("variety", False)
+            
+            # Buscar más empleos con paginación
+            results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=current_offset, variety=variety)
+            
+            if results:
+                # Actualizar offset para la próxima búsqueda
+                conv.state["current_offset"] = current_offset + 3
+                conv.state["last_results"] = _serialize_job_results(results)
+                conv.save()
+                
+                # Mensaje de respuesta
+                if variety:
+                    message = "¡Perfecto! Te muestro empleos diferentes para que tengas más opciones: 🎯"
+                else:
+                    message = "¡Aquí tienes más empleos que podrían interesarte: 📋"
+                
+                conv.history.append({"role":"system","text": message})
+                conv.save()
+                
+                return Response({
+                    "type": "more_results", 
+                    "results": results, 
+                    "trace": steps,
+                    "pagination_info": pagination_info,
+                    "current_offset": conv.state["current_offset"],
+                    "message": message,
+                })
+            else:
+                # No hay más empleos disponibles
+                message = "Lo siento, no tengo más empleos que mostrarte con esos criterios. ¿Te gustaría que ajuste los filtros o busque en otras categorías? 🔍"
+                conv.history.append({"role":"system","text": message})
+                conv.save()
+                return Response({"type": "no_more_results", "message": message})
+
         # Si el usuario está seleccionando un empleo específico
         if job_selection and job_selection.get("action") == "select_job":
             # Buscar el empleo en los resultados anteriores
@@ -231,14 +280,29 @@ class ChatMessage(APIView):
         # Si el usuario pide recomendar ya:
         if any(w in text.lower() for w in ["listo","recomienda","muestrame","sugerencias","ofrecer","buscar","empleos","trabajos"]):
             include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
-            results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3)
+            results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=0, variety=False)
+            
+            # Obtener información de paginación
+            pagination_info = get_job_pagination_info(include, exclude, sal_min, currency)
             
             # Guardar resultados en el estado para selección posterior
             conv.state["last_results"] = _serialize_job_results(results)
+            conv.state["current_offset"] = 3  # Preparar para la próxima búsqueda
             conv.save()
             
-            reply = {"type": "results", "results": results, "trace": steps}
-            conv.history.append({"role":"system","text":"¡Perfecto! Te dejo mis mejores sugerencias basadas en tus preferencias. 🎯"})
+            # Mensaje con información de paginación
+            message = "¡Perfecto! Te dejo mis mejores sugerencias basadas en tus preferencias. 🎯"
+            if pagination_info["has_more"]:
+                message += f"\n\n💡 Si quieres ver más empleos, solo escribe 'más empleos' o 'muéstrame más'. Tengo {pagination_info['total_jobs']} empleos disponibles para ti."
+            
+            reply = {
+                "type": "results", 
+                "results": results, 
+                "trace": steps,
+                "pagination_info": pagination_info,
+                "message": message
+            }
+            conv.history.append({"role":"system","text": message})
             conv.save()
             return Response(reply)
 
@@ -274,10 +338,14 @@ class ChatMessage(APIView):
 
         # Si no faltan slots, devuelve recomendaciones
         include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
-        results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3)
+        results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=0, variety=False)
+        
+        # Obtener información de paginación
+        pagination_info = get_job_pagination_info(include, exclude, sal_min, currency)
         
         # Guardar resultados en el estado para selección posterior
         conv.state["last_results"] = _serialize_job_results(results)
+        conv.state["current_offset"] = 3  # Preparar para la próxima búsqueda
         conv.save()
         
         # Mensaje final empático
@@ -285,9 +353,19 @@ class ChatMessage(APIView):
         if encouraging_response:
             final_message = f"{encouraging_response}\n\n{final_message}"
         
+        if pagination_info["has_more"]:
+            final_message += f"\n\n💡 Si quieres ver más empleos, solo escribe 'más empleos' o 'muéstrame más'. Tengo {pagination_info['total_jobs']} empleos disponibles para ti."
+        
         conv.history.append({"role":"system","text": final_message})
         conv.save()
-        return Response({"type":"results", "results": results, "trace": steps, "filled": conv.state})
+        return Response({
+            "type":"results", 
+            "results": results, 
+            "trace": steps, 
+            "filled": conv.state,
+            "pagination_info": pagination_info,
+            "message": final_message
+        })
 
 
 class TaxonomyView(APIView):

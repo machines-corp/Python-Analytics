@@ -7,7 +7,7 @@ def _apply(queryset, include:dict, exclude:dict, salary_min:int|None, currency:s
     
     # Mapeo de campos del modelo Job a JobPosting
     field_mapping = {
-        'industry': 'company__name',  # Mapear industria a nombre de empresa por ahora
+        'industry': 'area',  # Por ahora usar area como proxy para industry
         'area': 'area',
         'role': 'title',  # Mapear role a title
         'seniority': 'min_experience',  # Mapear seniority a min_experience
@@ -26,7 +26,7 @@ def _apply(queryset, include:dict, exclude:dict, salary_min:int|None, currency:s
             q = Q()
             for v in values:
                 if attr == 'industry':
-                    # Para industria, buscar en el nombre de la empresa
+                    # Para industria, buscar en el área (proxy)
                     q |= Q(**{f"{mapped_field}__icontains": v})
                 elif attr == 'role':
                     # Para role, buscar en el título
@@ -34,6 +34,12 @@ def _apply(queryset, include:dict, exclude:dict, salary_min:int|None, currency:s
                 elif attr == 'seniority':
                     # Para seniority, buscar en min_experience
                     q |= Q(**{f"{mapped_field}__icontains": v})
+                elif attr == 'area':
+                    # Para área, usar búsqueda parcial
+                    q |= Q(**{f"{mapped_field}__icontains": v})
+                elif attr == 'modality':
+                    # Para modalidad, usar búsqueda insensible a mayúsculas
+                    q |= Q(**{f"{mapped_field}__iexact": v})
                 else:
                     q |= Q(**{f"{mapped_field}__iexact": v})
             qs = qs.filter(q)
@@ -50,17 +56,30 @@ def _apply(queryset, include:dict, exclude:dict, salary_min:int|None, currency:s
                     q |= Q(**{f"{mapped_field}__icontains": v})
                 elif attr == 'seniority':
                     q |= Q(**{f"{mapped_field}__icontains": v})
+                elif attr == 'area':
+                    q |= Q(**{f"{mapped_field}__icontains": v})
+                elif attr == 'modality':
+                    q |= Q(**{f"{mapped_field}__iexact": v})
                 else:
                     q |= Q(**{f"{mapped_field}__iexact": v})
             qs = qs.exclude(q)
     
     return qs
 
-def decide_jobs(include:dict, exclude:dict, salary_min:int|None, currency:str|None, topn:int=3):
+def decide_jobs(include:dict, exclude:dict, salary_min:int|None, currency:str|None, topn:int=3, offset:int=0, variety:bool=False):
     """
     Intenta con reglas completas → si no hay resultados, RELAJA:
     1) Quita exclusiones (en orden dado)
     2) Quita inclusiones (en orden dado)
+    
+    Args:
+        include: Filtros de inclusión
+        exclude: Filtros de exclusión
+        salary_min: Salario mínimo
+        currency: Moneda
+        topn: Número de resultados a devolver
+        offset: Desplazamiento para paginación
+        variety: Si True, intenta maximizar la variedad de resultados
     """
     steps = []
     base = JobPosting.objects.select_related('company', 'location').all()
@@ -69,7 +88,8 @@ def decide_jobs(include:dict, exclude:dict, salary_min:int|None, currency:str|No
     qs = _apply(base, include, exclude, salary_min, currency)
     steps.append(("apply", {"include":include, "exclude":exclude, "results": qs.count()}))
     if qs.exists():
-        return list(qs[:topn].values()), steps
+        results = _get_varied_results(qs, topn, offset, variety)
+        return results, steps
 
     # orden de relajación por defecto
     relax_order: List[Tuple[str,str]] = []
@@ -92,7 +112,78 @@ def decide_jobs(include:dict, exclude:dict, salary_min:int|None, currency:str|No
         qs = _apply(base, inc_cur, exc_cur, salary_min, currency)
         steps.append(("apply", {"include":inc_cur, "exclude":exc_cur, "results": qs.count()}))
         if qs.exists():
-            return list(qs[:topn].values()), steps
+            results = _get_varied_results(qs, topn, offset, variety)
+            return results, steps
 
     steps.append(("fallback", {"reason": "no matches even after relaxing"}))
-    return list(base[:topn].values()), steps
+    results = _get_varied_results(base, topn, offset, variety)
+    return results, steps
+
+def _get_varied_results(queryset, topn: int, offset: int, variety: bool = False):
+    """
+    Obtiene resultados con variedad si se solicita, o resultados normales con paginación.
+    """
+    total_count = queryset.count()
+    if total_count == 0:
+        return []
+    
+    if variety:
+        # Para maximizar variedad, ordenamos por diferentes criterios y tomamos muestras
+        # Esto ayuda a evitar mostrar siempre los mismos empleos
+        import random
+        
+        # Obtener una muestra más grande para seleccionar variedad
+        sample_size = min(total_count, topn * 10)  # Obtener 10x más para seleccionar variedad
+        
+        # Diferentes ordenamientos para variedad
+        orderings = [
+            ['-published_date', 'title'],  # Por fecha y título
+            ['company__name', 'title'],    # Por empresa y título
+            ['title', '-published_date'],  # Por título y fecha
+            ['-id', 'title'],              # Por ID (aleatorio efectivo)
+            ['location__raw_text', 'title'], # Por ubicación y título
+        ]
+        
+        # Seleccionar ordenamiento aleatorio
+        ordering = random.choice(orderings)
+        varied_qs = queryset.order_by(*ordering)[:sample_size]
+        
+        # Convertir a lista y mezclar para mayor variedad
+        varied_results = list(varied_qs.values())
+        random.shuffle(varied_results)
+        
+        # Aplicar offset y limit
+        start_idx = offset
+        end_idx = start_idx + topn
+        
+        # Si no hay suficientes resultados con variedad, usar paginación normal
+        if start_idx >= len(varied_results):
+            # Fallback a paginación normal
+            ordered_qs = queryset.order_by('id')
+            fallback_results = list(ordered_qs[offset:offset + topn].values())
+            if fallback_results:
+                return fallback_results
+            else:
+                # Si aún no hay resultados, relajar filtros
+                return list(queryset.order_by('id')[:topn].values())
+        
+        return varied_results[start_idx:end_idx]
+    else:
+        # Paginación normal con offset - usar ordenamiento consistente
+        # Ordenar por ID para tener un orden predecible
+        ordered_qs = queryset.order_by('id')
+        return list(ordered_qs[offset:offset + topn].values())
+
+def get_job_pagination_info(include: dict, exclude: dict, salary_min: int = None, currency: str = None):
+    """
+    Obtiene información de paginación para los filtros dados.
+    """
+    base = JobPosting.objects.select_related('company', 'location').all()
+    qs = _apply(base, include, exclude, salary_min, currency)
+    
+    total_count = qs.count()
+    return {
+        "total_jobs": total_count,
+        "has_more": total_count > 3,  # Asumiendo que mostramos 3 por defecto
+        "estimated_pages": (total_count + 2) // 3  # Páginas de 3 empleos
+    }

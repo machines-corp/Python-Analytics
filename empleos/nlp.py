@@ -46,88 +46,238 @@ SYNONYMS = {
 def get_industries_from_db():
     """Obtiene industrias únicas de los nombres de empresas en la BD"""
     try:
+        # Obtener todas las empresas únicas
         companies = JobPosting.objects.values_list('company__name', flat=True).distinct()
-        # Por ahora retornamos las industrias hardcodeadas, pero podrías implementar
-        # un mapeo de empresas a industrias o usar NLP para clasificar
-        return ["Tecnología","Educación","Salud","Finanzas","Retail","Manufactura","Servicios"]
-    except:
-        return ["Tecnología","Educación","Salud","Finanzas"]
+        
+        # Clasificar empresas por industria usando palabras clave
+        industries = set()
+        for company in companies:
+            if not company:
+                continue
+            company_lower = company.lower()
+            
+            # Clasificación por palabras clave en el nombre de la empresa
+            if any(word in company_lower for word in ['tech', 'software', 'informática', 'sistemas', 'digital', 'data', 'cloud']):
+                industries.add('Tecnología')
+            elif any(word in company_lower for word in ['educación', 'universidad', 'colegio', 'academia', 'instituto']):
+                industries.add('Educación')
+            elif any(word in company_lower for word in ['salud', 'médico', 'hospital', 'clínica', 'farmacéutico']):
+                industries.add('Salud')
+            elif any(word in company_lower for word in ['banco', 'financiero', 'inversión', 'seguros', 'contable']):
+                industries.add('Finanzas')
+            elif any(word in company_lower for word in ['retail', 'comercio', 'tienda', 'ventas', 'comercial']):
+                industries.add('Retail')
+            elif any(word in company_lower for word in ['manufactura', 'producción', 'industrial', 'fábrica']):
+                industries.add('Manufactura')
+            else:
+                industries.add('Servicios')  # Default para empresas no clasificadas
+        
+        return list(industries) if industries else ['Servicios']
+    except Exception as e:
+        print(f"Error obteniendo industrias: {e}")
+        return ['Servicios']
 
 def get_modalities_from_db():
     """Obtiene modalidades únicas de la BD"""
     try:
         modalities = JobPosting.objects.exclude(work_modality__isnull=True).exclude(work_modality='').values_list('work_modality', flat=True).distinct()
+        
         # Normalizar modalidades
         normalized = set()
         for mod in modalities:
-            mod_lower = mod.lower() if mod else ''
-            if 'remoto' in mod_lower or 'teletrabajo' in mod_lower:
+            if not mod:
+                continue
+            mod_lower = mod.lower()
+            if 'remoto' in mod_lower or 'teletrabajo' in mod_lower or 'home office' in mod_lower:
                 normalized.add('Remoto')
-            elif 'híbrido' in mod_lower or 'hibrido' in mod_lower or 'mixto' in mod_lower:
+            elif 'híbrido' in mod_lower or 'hibrido' in mod_lower or 'mixto' in mod_lower or 'combinado' in mod_lower:
                 normalized.add('Híbrido')
-            elif 'presencial' in mod_lower or 'oficina' in mod_lower:
+            elif 'presencial' in mod_lower or 'oficina' in mod_lower or 'físico' in mod_lower:
                 normalized.add('Presencial')
-        return list(normalized) if normalized else ["Remoto","Híbrido","Presencial"]
-    except:
-        return ["Remoto","Híbrido","Presencial"]
+        
+        return list(normalized) if normalized else []
+    except Exception as e:
+        print(f"Error obteniendo modalidades: {e}")
+        return []
 
 def get_areas_from_db():
     """Obtiene áreas únicas de la BD"""
     try:
         areas = JobPosting.objects.exclude(area__isnull=True).exclude(area='').values_list('area', flat=True).distinct()
-        return list(areas) if areas else ["Datos","Desarrollo","Infraestructura","Calidad","Soporte","Diseño","Docencia","Gestión","Clínica","Apoyo","Análisis"]
-    except:
-        return ["Datos","Desarrollo","Infraestructura","Calidad","Soporte","Diseño","Docencia","Gestión","Clínica","Apoyo","Análisis"]
+        return [area for area in areas if area]  # Filtrar valores vacíos
+    except Exception as e:
+        print(f"Error obteniendo áreas: {e}")
+        return []
 
 def get_seniorities_from_db():
     """Obtiene niveles de experiencia únicos de la BD"""
     try:
         experiences = JobPosting.objects.exclude(min_experience__isnull=True).exclude(min_experience='').values_list('min_experience', flat=True).distinct()
+        
         # Normalizar experiencias
         normalized = set()
         for exp in experiences:
-            exp_lower = exp.lower() if exp else ''
-            if any(word in exp_lower for word in ['junior', 'jr', 'entry', 'trainee', '0-1', '0-2']):
+            if not exp:
+                continue
+            exp_lower = exp.lower()
+            if any(word in exp_lower for word in ['junior', 'jr', 'entry', 'trainee', '0-1', '0-2', 'principiante']):
                 normalized.add('Junior')
-            elif any(word in exp_lower for word in ['semi', 'ssr', 'semi-senior', 'semisenior', '2-4', '3-5']):
+            elif any(word in exp_lower for word in ['semi', 'ssr', 'semi-senior', 'semisenior', '2-4', '3-5', 'intermedio']):
                 normalized.add('Semi')
-            elif any(word in exp_lower for word in ['senior', 'sr', 'experto', '5+', '6+']):
+            elif any(word in exp_lower for word in ['senior', 'sr', 'experto', '5+', '6+', 'avanzado']):
                 normalized.add('Senior')
-        return list(normalized) if normalized else ["Junior","Semi","Senior"]
-    except:
-        return ["Junior","Semi","Senior"]
+        
+        return list(normalized) if normalized else []
+    except Exception as e:
+        print(f"Error obteniendo seniorities: {e}")
+        return []
 
 def get_locations_from_db():
     """Obtiene ubicaciones únicas de la BD"""
     try:
         locations = JobPosting.objects.exclude(location__isnull=True).values_list('location__raw_text', flat=True).distinct()
-        return list(locations) if locations else ["Chile","LatAm"]
-    except:
-        return ["Chile","LatAm"]
+        return [loc for loc in locations if loc]  # Filtrar valores vacíos
+    except Exception as e:
+        print(f"Error obteniendo ubicaciones: {e}")
+        return []
 
 def get_roles_from_db():
     """Obtiene roles únicos de los títulos en la BD"""
     try:
         titles = JobPosting.objects.values_list('title', flat=True).distinct()
-        return list(titles) if titles else []
-    except:
+        return [title for title in titles if title]  # Filtrar valores vacíos
+    except Exception as e:
+        print(f"Error obteniendo roles: {e}")
         return []
 
-# Obtener taxonomías dinámicamente
-INDUSTRIES = get_industries_from_db()
-MODALITIES = get_modalities_from_db()
-SENIORITIES = get_seniorities_from_db()
-AREAS = get_areas_from_db()
-LOCATIONS = get_locations_from_db()
+# Funciones para obtener taxonomías dinámicamente (se llaman en tiempo real)
+def get_current_industries():
+    """Obtiene las industrias actuales de la BD"""
+    return get_industries_from_db()
+
+def get_current_modalities():
+    """Obtiene las modalidades actuales de la BD"""
+    return get_modalities_from_db()
+
+def get_current_seniorities():
+    """Obtiene los seniorities actuales de la BD"""
+    return get_seniorities_from_db()
+
+def get_current_areas():
+    """Obtiene las áreas actuales de la BD"""
+    return get_areas_from_db()
+
+def get_current_locations():
+    """Obtiene las ubicaciones actuales de la BD"""
+    return get_locations_from_db()
+
+def get_current_roles():
+    """Obtiene los roles actuales de la BD"""
+    return get_roles_from_db()
+
+def generate_dynamic_synonyms():
+    """
+    Genera sinónimos dinámicos basados en los datos reales de la BD.
+    Esto permite que el sistema aprenda de los datos existentes.
+    """
+    dynamic_synonyms = {}
+    
+    try:
+        # Obtener datos actuales
+        industries = get_current_industries()
+        modalities = get_current_modalities()
+        seniorities = get_current_seniorities()
+        areas = get_current_areas()
+        locations = get_current_locations()
+        roles = get_current_roles()
+        
+        # Generar sinónimos para modalidades
+        for modality in modalities:
+            if modality:
+                modality_lower = modality.lower()
+                if 'remoto' in modality_lower or 'teletrabajo' in modality_lower:
+                    dynamic_synonyms.setdefault('remoto', []).extend(['remoto', 'teletrabajo', 'desde casa', 'home office'])
+                elif 'híbrido' in modality_lower or 'hibrido' in modality_lower:
+                    dynamic_synonyms.setdefault('híbrido', []).extend(['híbrido', 'hibrido', 'mixto', 'combinado'])
+                elif 'presencial' in modality_lower:
+                    dynamic_synonyms.setdefault('presencial', []).extend(['presencial', 'en oficina', 'oficina'])
+        
+        # Generar sinónimos para seniorities
+        for seniority in seniorities:
+            if seniority:
+                seniority_lower = seniority.lower()
+                if 'junior' in seniority_lower:
+                    dynamic_synonyms.setdefault('junior', []).extend(['junior', 'jr', 'entry', 'trainee', 'principiante'])
+                elif 'semi' in seniority_lower:
+                    dynamic_synonyms.setdefault('semi', []).extend(['semi', 'ssr', 'semi-senior', 'intermedio'])
+                elif 'senior' in seniority_lower:
+                    dynamic_synonyms.setdefault('senior', []).extend(['senior', 'sr', 'experto', 'avanzado'])
+        
+        # Generar sinónimos para áreas
+        for area in areas:
+            if area:
+                area_lower = area.lower()
+                if 'datos' in area_lower or 'data' in area_lower:
+                    dynamic_synonyms.setdefault('datos', []).extend(['datos', 'data', 'analítica', 'analytics'])
+                elif 'desarrollo' in area_lower or 'dev' in area_lower:
+                    dynamic_synonyms.setdefault('desarrollo', []).extend(['desarrollo', 'dev', 'programación', 'software'])
+                elif 'diseño' in area_lower or 'design' in area_lower:
+                    dynamic_synonyms.setdefault('diseño', []).extend(['diseño', 'ux', 'ui', 'diseñador'])
+                elif 'calidad' in area_lower or 'qa' in area_lower:
+                    dynamic_synonyms.setdefault('calidad', []).extend(['calidad', 'qa', 'testing', 'pruebas'])
+        
+        # Generar sinónimos para industrias basados en empresas
+        companies = JobPosting.objects.values_list('company__name', flat=True).distinct()
+        for company in companies:
+            if company:
+                company_lower = company.lower()
+                if any(word in company_lower for word in ['tech', 'software', 'informática']):
+                    dynamic_synonyms.setdefault('tecnología', []).extend(['tecnología', 'tech', 'informática', 'software'])
+                elif any(word in company_lower for word in ['educación', 'universidad', 'colegio']):
+                    dynamic_synonyms.setdefault('educación', []).extend(['educación', 'educativo', 'académico'])
+                elif any(word in company_lower for word in ['salud', 'médico', 'hospital']):
+                    dynamic_synonyms.setdefault('salud', []).extend(['salud', 'médico', 'hospital', 'clínica'])
+        
+        # Limpiar duplicados
+        for key in dynamic_synonyms:
+            dynamic_synonyms[key] = list(set(dynamic_synonyms[key]))
+            
+    except Exception as e:
+        print(f"Error generando sinónimos dinámicos: {e}")
+    
+    return dynamic_synonyms
+
+def get_enhanced_synonyms():
+    """
+    Combina los sinónimos estáticos con los dinámicos de la BD.
+    """
+    static_synonyms = SYNONYMS.copy()
+    dynamic_synonyms = generate_dynamic_synonyms()
+    
+    # Combinar sinónimos estáticos y dinámicos
+    enhanced_synonyms = static_synonyms.copy()
+    
+    for key, values in dynamic_synonyms.items():
+        if key in enhanced_synonyms:
+            # Combinar listas y eliminar duplicados
+            enhanced_synonyms[key] = list(set(enhanced_synonyms[key] + values))
+        else:
+            enhanced_synonyms[key] = values
+    
+    return enhanced_synonyms
 
 def _inv_synonyms() -> Dict[str,str]:
+    """Genera diccionario inverso de sinónimos usando datos dinámicos de la BD"""
     inv = {}
-    for canon, arr in SYNONYMS.items():
+    enhanced_synonyms = get_enhanced_synonyms()
+    for canon, arr in enhanced_synonyms.items():
         for s in arr:
             inv[s.lower()] = canon
     return inv
 
-INV_SYNS = _inv_synonyms()
+def get_current_inv_synonyms():
+    """Obtiene sinónimos inversos actuales basados en datos de BD"""
+    return _inv_synonyms()
 
 def _norm(s: str) -> str:
     s = s.lower()
@@ -177,9 +327,17 @@ def _negations(text: str) -> List[str]:
 def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, dict, int|None, str]:
     raw = _norm(prompt)
     
+    # Obtener datos actuales de la BD
+    current_industries = get_current_industries()
+    current_modalities = get_current_modalities()
+    current_seniorities = get_current_seniorities()
+    current_areas = get_current_areas()
+    current_locations = get_current_locations()
+    current_inv_synonyms = get_current_inv_synonyms()
+    
     # Si no se proporcionan roles, obtenerlos de la BD
     if roles_from_db is None:
-        roles_from_db = get_roles_from_db()
+        roles_from_db = get_current_roles()
     
     # Moneda + salario
     currency = "USD" if ("usd" in raw or "$" in raw) else ("CLP" if ("clp" in raw or "pesos" in raw) else None)
@@ -191,31 +349,31 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
 
     include, exclude = {}, {}
 
-    # Modalidad - usando fuzzy matching
-    modality_matches = _fuzzy_match(raw, MODALITIES, threshold=0.6)
+    # Modalidad - usando fuzzy matching con datos de BD
+    modality_matches = _fuzzy_match(raw, current_modalities, threshold=0.6)
     if modality_matches:
         include.setdefault("modality", []).extend(modality_matches)
     
-    for syn, canon in INV_SYNS.items():
+    for syn, canon in current_inv_synonyms.items():
         if syn in raw and canon in ["remoto","híbrido","presencial"]:
             include.setdefault("modality", []).append({"remoto":"Remoto","híbrido":"Híbrido","presencial":"Presencial"}[canon])
 
-    # Seniority - usando fuzzy matching
-    seniority_matches = _fuzzy_match(raw, SENIORITIES, threshold=0.6)
+    # Seniority - usando fuzzy matching con datos de BD
+    seniority_matches = _fuzzy_match(raw, current_seniorities, threshold=0.6)
     if seniority_matches:
         include.setdefault("seniority", []).extend(seniority_matches)
     
-    for syn, canon in INV_SYNS.items():
+    for syn, canon in current_inv_synonyms.items():
         if syn in raw and canon in ["junior","semi","senior"]:
             include.setdefault("seniority", []).append(canon.capitalize())
 
-    # Industria - usando fuzzy matching para mejor reconocimiento
-    industry_matches = _fuzzy_match(raw, INDUSTRIES, threshold=0.5)
+    # Industria - usando fuzzy matching con datos de BD
+    industry_matches = _fuzzy_match(raw, current_industries, threshold=0.5)
     if industry_matches:
         include.setdefault("industry", []).extend(industry_matches)
     
     # También buscar por sinónimos de industrias
-    for syn, canon in INV_SYNS.items():
+    for syn, canon in current_inv_synonyms.items():
         if syn in raw and canon in ["tecnología", "educación", "salud", "finanzas", "retail", "manufactura", "servicios"]:
             industry_mapping = {
                 "tecnología": "Tecnología", "educación": "Educación", 
@@ -225,12 +383,12 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
             if canon in industry_mapping:
                 include.setdefault("industry", []).append(industry_mapping[canon])
 
-    # Área - usando fuzzy matching
-    area_matches = _fuzzy_match(raw, AREAS, threshold=0.6)
+    # Área - usando fuzzy matching con datos de BD
+    area_matches = _fuzzy_match(raw, current_areas, threshold=0.6)
     if area_matches:
         include.setdefault("area", []).extend(area_matches)
     
-    for syn, canon in INV_SYNS.items():
+    for syn, canon in current_inv_synonyms.items():
         if syn in raw and canon in ["datos","desarrollo","infraestructura","calidad","soporte","diseño","docencia"]:
             include.setdefault("area", []).append(canon.capitalize())
 
@@ -248,7 +406,7 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
             role_hits.append(r)
     
     # Sinónimos de roles
-    for syn, canon in INV_SYNS.items():
+    for syn, canon in current_inv_synonyms.items():
         if syn in raw and canon in ["data analyst","data engineer","backend developer","full stack dev","qa analyst","devops engineer","ux/ui designer"]:
             mapping = {
                 "data analyst":"Data Analyst", "data engineer":"Data Engineer",
@@ -260,8 +418,8 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
     if role_hits:
         include.setdefault("role", []).extend(role_hits)
 
-    # Ubicación - usando fuzzy matching
-    location_matches = _fuzzy_match(raw, LOCATIONS, threshold=0.6)
+    # Ubicación - usando fuzzy matching con datos de BD
+    location_matches = _fuzzy_match(raw, current_locations, threshold=0.6)
     if location_matches:
         include.setdefault("location", []).extend(location_matches)
 
@@ -271,7 +429,7 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
         for r in roles_from_db:
             if _norm(r) in term:
                 exclude.setdefault("role", []).append(r)
-        for syn, canon in INV_SYNS.items():
+        for syn, canon in current_inv_synonyms.items():
             if syn in term and canon in ["full stack dev","backend developer","data analyst","qa analyst","devops engineer","ux/ui designer"]:
                 mapping = {
                     "data analyst":"Data Analyst", "data engineer":"Data Engineer",
@@ -280,17 +438,17 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
                 }
                 exclude.setdefault("role", []).append(mapping.get(canon, canon))
         # área
-        for syn, canon in INV_SYNS.items():
+        for syn, canon in current_inv_synonyms.items():
             if syn in term and canon in ["datos","desarrollo","infraestructura","calidad","soporte","diseño","docencia"]:
                 exclude.setdefault("area", []).append(canon.capitalize())
         # modalidad / seniority
-        for syn, canon in INV_SYNS.items():
+        for syn, canon in current_inv_synonyms.items():
             if syn in term and canon in ["remoto","híbrido","presencial"]:
                 exclude.setdefault("modality", []).append({"remoto":"Remoto","híbrido":"Híbrido","presencial":"Presencial"}[canon])
             if syn in term and canon in ["junior","semi","senior"]:
                 exclude.setdefault("seniority", []).append(canon.capitalize())
         # industria
-        for ind in INDUSTRIES:
+        for ind in current_industries:
             if ind.lower() in term:
                 exclude.setdefault("industry", []).append(ind)
 
@@ -341,37 +499,65 @@ def parse_complex_intent(text: str) -> dict:
         ]
     }
     
+    # Obtener datos actuales de la BD
+    current_industries = get_current_industries()
+    current_areas = get_current_areas()
+    current_modalities = get_current_modalities()
+    current_seniorities = get_current_seniorities()
+    
     # Buscar patrones de intención
     for category, patterns in intent_patterns.items():
         for pattern in patterns:
             if re.search(pattern, raw):
-                # Mapear a valores específicos
+                # Mapear a valores específicos usando datos de BD
                 if category == "industry":
                     if any(word in raw for word in ["tecnol", "tech", "inform"]):
-                        result["industry"] = "Tecnología"
+                        # Buscar la industria de tecnología en los datos reales
+                        tech_industries = [ind for ind in current_industries if "tecnol" in ind.lower() or "tech" in ind.lower()]
+                        result["industry"] = tech_industries[0] if tech_industries else "Tecnología"
                 elif category == "area":
                     if any(word in raw for word in ["datos", "data", "anal"]):
-                        result["area"] = "Datos"
+                        # Buscar área de datos en los datos reales
+                        data_areas = [area for area in current_areas if "datos" in area.lower() or "data" in area.lower()]
+                        result["area"] = data_areas[0] if data_areas else "Datos"
                     elif any(word in raw for word in ["desarrollo", "program", "software"]):
-                        result["area"] = "Desarrollo"
+                        # Buscar área de desarrollo en los datos reales
+                        dev_areas = [area for area in current_areas if "desarrollo" in area.lower() or "dev" in area.lower()]
+                        result["area"] = dev_areas[0] if dev_areas else "Desarrollo"
                     elif any(word in raw for word in ["diseño", "dise"]):
-                        result["area"] = "Diseño"
+                        # Buscar área de diseño en los datos reales
+                        design_areas = [area for area in current_areas if "diseño" in area.lower() or "dise" in area.lower()]
+                        result["area"] = design_areas[0] if design_areas else "Diseño"
                     elif any(word in raw for word in ["qa", "calidad"]):
-                        result["area"] = "Calidad"
+                        # Buscar área de calidad en los datos reales
+                        qa_areas = [area for area in current_areas if "calidad" in area.lower() or "qa" in area.lower()]
+                        result["area"] = qa_areas[0] if qa_areas else "Calidad"
                 elif category == "modality":
                     if any(word in raw for word in ["remoto", "casa", "teletrabajo"]):
-                        result["modality"] = "Remoto"
+                        # Buscar modalidad remota en los datos reales
+                        remote_modalities = [mod for mod in current_modalities if "remoto" in mod.lower()]
+                        result["modality"] = remote_modalities[0] if remote_modalities else "Remoto"
                     elif any(word in raw for word in ["presencial", "oficina"]):
-                        result["modality"] = "Presencial"
+                        # Buscar modalidad presencial en los datos reales
+                        onsite_modalities = [mod for mod in current_modalities if "presencial" in mod.lower()]
+                        result["modality"] = onsite_modalities[0] if onsite_modalities else "Presencial"
                     elif any(word in raw for word in ["híbrido", "hibrido"]):
-                        result["modality"] = "Híbrido"
+                        # Buscar modalidad híbrida en los datos reales
+                        hybrid_modalities = [mod for mod in current_modalities if "híbrido" in mod.lower() or "hibrido" in mod.lower()]
+                        result["modality"] = hybrid_modalities[0] if hybrid_modalities else "Híbrido"
                 elif category == "seniority":
                     if any(word in raw for word in ["junior", "principiante"]):
-                        result["seniority"] = "Junior"
+                        # Buscar seniority junior en los datos reales
+                        junior_seniorities = [sen for sen in current_seniorities if "junior" in sen.lower()]
+                        result["seniority"] = junior_seniorities[0] if junior_seniorities else "Junior"
                     elif any(word in raw for word in ["semi", "intermedio"]):
-                        result["seniority"] = "Semi"
-                elif any(word in raw for word in ["senior", "experto"]):
-                    result["seniority"] = "Senior"
+                        # Buscar seniority semi en los datos reales
+                        semi_seniorities = [sen for sen in current_seniorities if "semi" in sen.lower()]
+                        result["seniority"] = semi_seniorities[0] if semi_seniorities else "Semi"
+                    elif any(word in raw for word in ["senior", "experto"]):
+                        # Buscar seniority senior en los datos reales
+                        senior_seniorities = [sen for sen in current_seniorities if "senior" in sen.lower()]
+                        result["seniority"] = senior_seniorities[0] if senior_seniorities else "Senior"
     
     return result
 
@@ -421,6 +607,62 @@ def parse_job_selection(text: str) -> dict:
     
     return result
 
+def parse_more_jobs_intent(text: str) -> dict:
+    """
+    Detecta si el usuario está pidiendo más empleos o diferentes empleos.
+    Ejemplos: "muéstrame más", "quiero ver otros", "diferentes empleos", "más opciones"
+    """
+    raw = _norm(text)
+    result = {}
+    
+    # Patrones para detectar solicitud de más empleos
+    more_patterns = [
+        r"mu[eé]strame\s+m[aá]s",
+        r"quiero\s+ver\s+m[aá]s",
+        r"m[aá]s\s+empleos",
+        r"m[aá]s\s+trabajos",
+        r"m[aá]s\s+opciones",
+        r"m[aá]s\s+sugerencias",
+        r"diferentes\s+empleos",
+        r"otros\s+empleos",
+        r"m[aá]s\s+resultados",
+        r"m[aá]s\s+alternativas",
+        r"ver\s+m[aá]s",
+        r"mostrar\s+m[aá]s",
+        r"buscar\s+m[aá]s",
+        r"encontrar\s+m[aá]s",
+        r"generar\s+m[aá]s",
+        r"dame\s+m[aá]s",
+        r"dame\s+otros",
+        r"dame\s+diferentes",
+        r"necesito\s+m[aá]s",
+        r"quiero\s+otros",
+        r"quiero\s+diferentes",
+        r"no\s+me\s+gustan\s+estos",
+        r"estos\s+no\s+me\s+gustan",
+        r"cambiar\s+opciones",
+        r"nuevas\s+opciones",
+        r"nuevos\s+empleos",
+        r"nuevos\s+trabajos"
+    ]
+    
+    # Buscar patrones de "más empleos"
+    for pattern in more_patterns:
+        if re.search(pattern, raw):
+            result["action"] = "more_jobs"
+            result["intent"] = "request_more"
+            break
+    
+    # Detectar si pide específicamente diferentes empleos
+    if any(word in raw for word in ["diferentes", "otros", "nuevos", "cambiar"]):
+        result["variety"] = True
+        # Si no se detectó action anteriormente, agregarlo
+        if "action" not in result:
+            result["action"] = "more_jobs"
+            result["intent"] = "request_more"
+    
+    return result
+
 def parse_simple_response(text: str, context: str = None) -> dict:
     """
     Función simplificada para parsear respuestas directas del chat.
@@ -431,31 +673,31 @@ def parse_simple_response(text: str, context: str = None) -> dict:
     
     # Si el contexto es industria
     if context == "industry":
-        industry_matches = _fuzzy_match(raw, INDUSTRIES, threshold=0.4)
+        industry_matches = _fuzzy_match(raw, get_current_industries(), threshold=0.4)
         if industry_matches:
             result["industry"] = industry_matches[0]  # Tomar la primera coincidencia
     
     # Si el contexto es modalidad
     elif context == "modality":
-        modality_matches = _fuzzy_match(raw, MODALITIES, threshold=0.4)
+        modality_matches = _fuzzy_match(raw, get_current_modalities(), threshold=0.4)
         if modality_matches:
             result["modality"] = modality_matches[0]
     
     # Si el contexto es seniority
     elif context == "seniority":
-        seniority_matches = _fuzzy_match(raw, SENIORITIES, threshold=0.4)
+        seniority_matches = _fuzzy_match(raw, get_current_seniorities(), threshold=0.4)
         if seniority_matches:
             result["seniority"] = seniority_matches[0]
     
     # Si el contexto es área
     elif context == "area":
-        area_matches = _fuzzy_match(raw, AREAS, threshold=0.4)
+        area_matches = _fuzzy_match(raw, get_current_areas(), threshold=0.4)
         if area_matches:
             result["area"] = area_matches[0]
     
     # Si el contexto es ubicación
     elif context == "location":
-        location_matches = _fuzzy_match(raw, LOCATIONS, threshold=0.4)
+        location_matches = _fuzzy_match(raw, get_current_locations(), threshold=0.4)
         if location_matches:
             result["location"] = location_matches[0]
     
@@ -467,3 +709,54 @@ def parse_simple_response(text: str, context: str = None) -> dict:
             result["salary"] = {"min": salary_min, "currency": currency}
     
     return result
+
+def test_dynamic_system():
+    """
+    Función de prueba para verificar que el sistema dinámico funciona correctamente.
+    """
+    print("=== PRUEBA DEL SISTEMA DINÁMICO ===")
+    
+    try:
+        # Probar obtención de datos de BD
+        print("\n1. Probando obtención de datos de BD:")
+        industries = get_current_industries()
+        modalities = get_current_modalities()
+        seniorities = get_current_seniorities()
+        areas = get_current_areas()
+        locations = get_current_locations()
+        roles = get_current_roles()
+        
+        print(f"   - Industrias encontradas: {industries}")
+        print(f"   - Modalidades encontradas: {modalities}")
+        print(f"   - Seniorities encontrados: {seniorities}")
+        print(f"   - Áreas encontradas: {areas}")
+        print(f"   - Ubicaciones encontradas: {locations}")
+        print(f"   - Roles encontrados: {len(roles)} roles")
+        
+        # Probar sinónimos dinámicos
+        print("\n2. Probando sinónimos dinámicos:")
+        enhanced_synonyms = get_enhanced_synonyms()
+        print(f"   - Sinónimos mejorados generados: {len(enhanced_synonyms)} categorías")
+        
+        # Probar parsing con datos dinámicos
+        print("\n3. Probando parsing con datos dinámicos:")
+        test_prompts = [
+            "busco trabajo remoto en tecnología",
+            "quiero un empleo de datos",
+            "necesito trabajo presencial",
+            "busco empleo junior en desarrollo"
+        ]
+        
+        for prompt in test_prompts:
+            print(f"\n   Probando: '{prompt}'")
+            include, exclude, salary, currency = parse_prompt(prompt)
+            print(f"   - Include: {include}")
+            print(f"   - Exclude: {exclude}")
+            print(f"   - Salary: {salary}, Currency: {currency}")
+        
+        print("\n✅ Sistema dinámico funcionando correctamente!")
+        return True
+        
+    except Exception as e:
+        print(f"\n❌ Error en el sistema dinámico: {e}")
+        return False
