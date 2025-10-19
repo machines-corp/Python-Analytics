@@ -7,7 +7,12 @@ from .models import JobPosting, Conversation
 from django.db import ProgrammingError, OperationalError
 from .serializers import ConversationSerializer
 from .flow import next_missing_slot, question_for, get_encouraging_response
-
+from django.views.decorators.csrf import csrf_exempt
+from django.utils.decorators import method_decorator
+from django.forms.models import model_to_dict
+from django.http import JsonResponse, HttpResponseBadRequest
+from django.db import transaction
+from .models import JobPosting, Source, Company, Location, Benefit
 
 class JobSearchView(APIView):
     def post(self, request):
@@ -353,3 +358,165 @@ class JobDetailsView(APIView):
             return Response({"error": "Empleo no encontrado"}, status=status.HTTP_404_NOT_FOUND)
         except Exception as e:
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+def _field_names(model):
+    names = set()
+    for f in model._meta.get_fields():
+        if getattr(f, "auto_created", False) and not getattr(f, "concrete", False):
+            continue
+        if getattr(f, "many_to_many", False):
+            continue
+        if hasattr(f, "editable") and f.editable:
+            names.add(f.name)
+    return names
+
+
+def _choices_from_model(model):
+    out = {}
+    for f in model._meta.fields:
+        if f.choices:
+            out[f.name] = [label for value, label in f.choices]
+    return out
+
+
+def _fallback_choices():
+    return {
+        "modality": ["Remoto", "Híbrido", "Presencial"],
+        "seniority": ["Junior", "Semi", "Senior"],
+        "currency": ["USD", "CLP"],
+        "schedule": ["Completa", "Parcial"],
+    }
+
+
+class JobPostingChoicesAPI(APIView):
+    def get(self, request):
+        choices = _choices_from_model(JobPosting)
+        if not choices:
+            choices = _fallback_choices()
+        else:
+            for k, v in _fallback_choices().items():
+                choices.setdefault(k, v)
+        return Response({"choices": choices}, status=status.HTTP_200_OK)
+
+
+class JobPostingListCreateAPI(APIView):
+    def get(self, request):
+        qs = JobPosting.objects.all().order_by("-id")[:200]
+        data = []
+        for j in qs:
+            data.append({
+                "id": j.id,
+                "title": getattr(j, "title", ""),
+                "company": getattr(j.company, "name", None) if getattr(j, "company", None) else None,
+                "source": getattr(j.source, "name", None) if getattr(j, "source", None) else None,
+                "location": getattr(j.location, "raw_text", None) if getattr(j, "location", None) else None,
+                "url": getattr(j, "url", None),
+            })
+        return Response({"results": data}, status=status.HTTP_200_OK)
+
+    @transaction.atomic
+    def post(self, request):
+        payload = request.data
+
+        # ---- Campos "amigables" para FKs / M2M
+        source_name   = payload.pop("source_name", None)
+        company_name  = payload.pop("company_name", None)
+        country       = payload.pop("country", None)
+        city          = payload.pop("city", None)
+        location_text = payload.pop("location_text", None) or payload.pop("location_raw_text", None)
+        benefits_in   = payload.pop("benefits", None)  # lista de strings
+
+        # ---- Source
+        source = None
+        if source_name:
+            source, _ = Source.objects.get_or_create(name=source_name)
+
+        # ---- Company
+        company = None
+        if company_name:
+            company, _ = Company.objects.get_or_create(name=company_name)
+
+        # ---- Location (tolerante a esquema)
+        location = None
+        loc_fields = _field_names(Location)  # nombres de campos editables existentes
+        # Construye kwargs solo con campos que EXISTEN realmente
+        loc_kwargs = {}
+        if "country" in loc_fields and country:
+            loc_kwargs["country"] = country
+        if "city" in loc_fields and city:
+            loc_kwargs["city"] = city
+
+        # Si el modelo SOLO tiene raw_text (como indica tu error)
+        if "raw_text" in loc_fields and not loc_kwargs:
+            # Si no mandan location_text, arma uno con lo que haya
+            raw = location_text or ", ".join([x for x in [city, country] if x]) or "Chile"
+            location, _ = Location.objects.get_or_create(raw_text=raw)
+        else:
+            # El modelo sí tiene city/country u otros; usa get_or_create con defaults
+            defaults = {}
+            if "raw_text" in loc_fields and location_text:
+                defaults["raw_text"] = location_text
+            if loc_kwargs:
+                location, created = Location.objects.get_or_create(**loc_kwargs, defaults=defaults)
+                # Si ya existía pero mandaron raw_text, intenta actualizarlo
+                if not created and "raw_text" in loc_fields and location_text and getattr(location, "raw_text", None) != location_text:
+                    location.raw_text = location_text
+                    location.save(update_fields=["raw_text"])
+            elif "raw_text" in loc_fields:
+                # último fallback
+                raw = location_text or ", ".join([x for x in [city, country] if x]) or "Chile"
+                location, _ = Location.objects.get_or_create(raw_text=raw)
+            else:
+                # si el modelo tuviera otros campos obligatorios, podrías manejar aquí
+                pass
+
+        # ---- Campos propios de JobPosting
+        allowed = _field_names(JobPosting)
+        job_data = {k: v for k, v in payload.items() if k in allowed}
+
+        # Casteos útiles
+        for k in ("salary_min", "salary_max"):
+            if k in job_data and job_data[k] in ("", None):
+                job_data.pop(k)
+            elif k in job_data:
+                try:
+                    job_data[k] = int(job_data[k])
+                except Exception:
+                    pass  # deja que el modelo/DB valide
+
+        # Inyecta FKs
+        if "source" in allowed and source:
+            job_data["source"] = source
+        if "company" in allowed and company:
+            job_data["company"] = company
+        if "location" in allowed and location:
+            job_data["location"] = location
+
+        # Crea el JobPosting
+        try:
+            job = JobPosting.objects.create(**job_data)
+        except Exception as e:
+            return Response({"error": str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+        # ---- Beneficios (M2M directa o tabla intermedia)
+        if benefits_in:
+            if isinstance(benefits_in, str):
+                benefits_in = [x.strip() for x in benefits_in.split(",") if x.strip()]
+            for b in benefits_in:
+                benefit, _ = Benefit.objects.get_or_create(name=b)
+                added = False
+                if hasattr(job, "benefits") and hasattr(job.benefits, "add"):
+                    job.benefits.add(benefit)
+                    added = True
+                if not added:
+                    try:
+                        from .models import JobBenefit
+                        JobBenefit.objects.get_or_create(job=job, benefit=benefit)
+                    except Exception:
+                        pass
+
+        return Response(
+            {"id": job.id, "message": "JobPosting creado correctamente"},
+            status=status.HTTP_201_CREATED
+        )
