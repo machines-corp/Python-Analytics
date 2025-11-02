@@ -15,13 +15,20 @@ SYNONYMS = {
     "senior": ["sr", "senior", "experto", "avanzado", "experimentado", "sénior"],
     
     # Áreas
-    "datos": ["datos", "data", "analítica", "analytics", "business intelligence", "bi"],
+    "datos": ["datos", "data", "analítica", "analytics", "business intelligence"],
     "desarrollo": ["desarrollo", "dev", "programación", "software", "coding", "programador"],
     "infraestructura": ["infraestructura", "devops", "ops", "sistemas", "infra"],
     "calidad": ["qa", "calidad", "testing", "pruebas", "test", "aseguramiento"],
     "soporte": ["soporte", "helpdesk", "mesa de ayuda", "atención", "asistencia"],
     "diseño": ["ux", "ui", "diseño", "ux/ui", "diseñador", "interfaz", "usuario"],
-    "docencia": ["docencia", "profesor", "enseñanza", "educación", "pedagogía"],
+    "gastronomía": ["gastronomía", "gastronomia", "cocina", "chef", "restaurante", "hotelería", "hoteleria"],
+    "cultura": ["cultura", "biblioteca", "museo", "artes", "cultural", "patrimonio"],
+    "salud": ["salud", "médico", "hospital", "clínica", "sanitario", "enfermería", "enfermeria"],
+    "construcción": ["construcción", "construccion", "obra", "arquitectura", "edificación", "edificacion"],
+    "transporte": ["transporte", "logística", "logistica", "transit", "vehículos", "vehiculos"],
+    "turismo": ["turismo", "hoteleria", "hotelería", "viajes", "recepción", "recepcion"],
+    "finanzas": ["finanzas", "financiero", "contabilidad", "contador", "auditoría", "auditoria"],
+    "rrhh": ["recursos humanos", "rrhh", "hr", "talento humano", "selección", "seleccion", "reclutamiento"],
     
     # Industrias
     "tecnología": ["tecnología", "tecnologica", "tech", "tecnico", "informática", "software", "it", "sistemas"],
@@ -30,7 +37,7 @@ SYNONYMS = {
     "finanzas": ["finanzas", "financiero", "bancario", "contable", "economía", "inversiones"],
     "retail": ["retail", "comercio", "ventas", "tienda", "comercial"],
     "manufactura": ["manufactura", "producción", "industrial", "fábrica"],
-    "servicios": ["servicios", "consultoría", "asesoría", "profesional"],
+    "servicios": ["servicios", "consultoría", "asesoría", "profesional", "gastronomia", "gastronomía", "gastronomica", "restaurante", "chef", "cocina", "turismo", "hotel", "viajes"],
 
     # Roles
     "data analyst": ["analista de datos", "data analyst", "analista datos", "analista", "business analyst"],
@@ -59,16 +66,20 @@ def get_industries_from_db():
             # Clasificación por palabras clave en el nombre de la empresa
             if any(word in company_lower for word in ['tech', 'software', 'informática', 'sistemas', 'digital', 'data', 'cloud']):
                 industries.add('Tecnología')
-            elif any(word in company_lower for word in ['educación', 'universidad', 'colegio', 'academia', 'instituto']):
+            elif any(word in company_lower for word in ['educación', 'educacion', 'universidad', 'colegio', 'academia', 'instituto', 'escuela']):
                 industries.add('Educación')
-            elif any(word in company_lower for word in ['salud', 'médico', 'hospital', 'clínica', 'farmacéutico']):
+            elif any(word in company_lower for word in ['salud', 'medico', 'médico', 'hospital', 'clinica', 'clínica', 'farmaceutico', 'farmacéutico', 'medicina']):
                 industries.add('Salud')
-            elif any(word in company_lower for word in ['banco', 'financiero', 'inversión', 'seguros', 'contable']):
+            elif any(word in company_lower for word in ['banco', 'financiero', 'inversion', 'inversión', 'seguros', 'contable', 'contabilidad']):
                 industries.add('Finanzas')
-            elif any(word in company_lower for word in ['retail', 'comercio', 'tienda', 'ventas', 'comercial']):
+            elif any(word in company_lower for word in ['retail', 'comercio', 'tienda', 'ventas', 'comercial', 'supermercado', 'bodega']):
                 industries.add('Retail')
-            elif any(word in company_lower for word in ['manufactura', 'producción', 'industrial', 'fábrica']):
+            elif any(word in company_lower for word in ['manufactura', 'produccion', 'producción', 'industrial', 'fabrica', 'fábrica', 'ingenieria', 'ingeniería']):
                 industries.add('Manufactura')
+            elif any(word in company_lower for word in ['hotel', 'turismo', 'viajes', 'gastronomia', 'gastronomía', 'restaurant', 'restaurante', 'chef', 'cocina']):
+                industries.add('Servicios')  # Turismo y gastronomía son servicios
+            elif any(word in company_lower for word in ['construccion', 'construcción', 'obra', 'arquitectura', 'inmobiliaria']):
+                industries.add('Servicios')  # Construcción es un servicio
             else:
                 industries.add('Servicios')  # Default para empresas no clasificadas
         
@@ -225,6 +236,22 @@ def generate_dynamic_synonyms():
                     dynamic_synonyms.setdefault('diseño', []).extend(['diseño', 'ux', 'ui', 'diseñador'])
                 elif 'calidad' in area_lower or 'qa' in area_lower:
                     dynamic_synonyms.setdefault('calidad', []).extend(['calidad', 'qa', 'testing', 'pruebas'])
+                elif 'gastronomía' in area_lower or 'gastronomia' in area_lower:
+                    dynamic_synonyms.setdefault('gastronomía', []).extend(['gastronomía', 'cocina', 'chef', 'restaurante'])
+                elif 'cultura' in area_lower:
+                    dynamic_synonyms.setdefault('cultura', []).extend(['cultura', 'biblioteca', 'museo', 'artes'])
+                elif 'salud' in area_lower:
+                    dynamic_synonyms.setdefault('salud', []).extend(['salud', 'médico', 'hospital', 'clínica'])
+                elif 'construcción' in area_lower or 'construccion' in area_lower:
+                    dynamic_synonyms.setdefault('construcción', []).extend(['construcción', 'obra', 'arquitectura'])
+                elif 'transporte' in area_lower:
+                    dynamic_synonyms.setdefault('transporte', []).extend(['transporte', 'logística', 'logistica'])
+                elif 'turismo' in area_lower:
+                    dynamic_synonyms.setdefault('turismo', []).extend(['turismo', 'hotelería', 'hoteleria', 'viajes'])
+                elif 'finanzas' in area_lower:
+                    dynamic_synonyms.setdefault('finanzas', []).extend(['finanzas', 'contabilidad', 'contador'])
+                elif 'recursos humanos' in area_lower or 'rrhh' in area_lower:
+                    dynamic_synonyms.setdefault('rrhh', []).extend(['recursos humanos', 'rrhh', 'hr', 'reclutamiento'])
         
         # Generar sinónimos para industrias basados en empresas
         companies = JobPosting.objects.values_list('company__name', flat=True).distinct()
@@ -286,6 +313,20 @@ def _norm(s: str) -> str:
     s = re.sub(r"\s+", " ", s).strip()
     return s
 
+def _is_whole_word(text: str, word: str) -> bool:
+    """
+    Verifica si 'word' aparece como palabra completa en 'text'.
+    Usa límites de palabra para evitar coincidencias parciales (ej: 'bi' en 'biblioteca').
+    """
+    if not text or not word:
+        return False
+    # Normalizar ambos para comparar correctamente
+    text_norm = _norm(text)
+    word_norm = _norm(word)
+    # Usar \b para límites de palabra, pero permitir que la palabra esté sola o entre espacios/palabra
+    pattern = r"\b" + re.escape(word_norm) + r"\b"
+    return bool(re.search(pattern, text_norm))
+
 def _fuzzy_match(text: str, options: List[str], threshold: float = 0.6) -> List[str]:
     """
     Encuentra coincidencias aproximadas entre el texto y las opciones.
@@ -325,7 +366,13 @@ def _negations(text: str) -> List[str]:
     return neg
 
 def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, dict, int|None, str]:
+    print("\n" + "="*80)
+    print("🔤 PARSE_PROMPT - Analizando prompt")
+    print("="*80)
+    print(f"📥 Prompt: '{prompt}'")
+    
     raw = _norm(prompt)
+    print(f"📝 Normalizado: '{raw}'")
     
     # Obtener datos actuales de la BD
     current_industries = get_current_industries()
@@ -335,9 +382,18 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
     current_locations = get_current_locations()
     current_inv_synonyms = get_current_inv_synonyms()
     
+    print(f"📊 Datos disponibles en BD:")
+    print(f"   - Industrias: {len(current_industries)}")
+    print(f"   - Modalidades: {len(current_modalities)}")
+    print(f"   - Seniorities: {len(current_seniorities)}")
+    print(f"   - Áreas: {len(current_areas)}")
+    print(f"   - Ubicaciones: {len(current_locations)}")
+    print(f"   - Sinónimos: {len(current_inv_synonyms)}")
+    
     # Si no se proporcionan roles, obtenerlos de la BD
     if roles_from_db is None:
         roles_from_db = get_current_roles()
+    print(f"   - Roles disponibles: {len(roles_from_db)}")
     
     # Moneda + salario
     currency = "USD" if ("usd" in raw or "$" in raw) else ("CLP" if ("clp" in raw or "pesos" in raw) else None)
@@ -346,51 +402,85 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
     if nums:
         try: salary_min = int(nums[0].replace(".",""))
         except: salary_min = None
+    
+    print(f"💰 Salario detectado: min={salary_min}, currency={currency}")
 
     include, exclude = {}, {}
 
     # Modalidad - usando fuzzy matching con datos de BD
     modality_matches = _fuzzy_match(raw, current_modalities, threshold=0.6)
     if modality_matches:
+        print(f"✅ Modalidad (fuzzy): {modality_matches}")
         include.setdefault("modality", []).extend(modality_matches)
     
     for syn, canon in current_inv_synonyms.items():
-        if syn in raw and canon in ["remoto","híbrido","presencial"]:
-            include.setdefault("modality", []).append({"remoto":"Remoto","híbrido":"Híbrido","presencial":"Presencial"}[canon])
+        if _is_whole_word(raw, syn) and canon in ["remoto","híbrido","presencial"]:
+            modality_canon = {"remoto":"Remoto","híbrido":"Híbrido","presencial":"Presencial"}[canon]
+            print(f"✅ Modalidad (sinónimo '{syn}'→'{canon}'→'{modality_canon}')")
+            include.setdefault("modality", []).append(modality_canon)
 
     # Seniority - usando fuzzy matching con datos de BD
     seniority_matches = _fuzzy_match(raw, current_seniorities, threshold=0.6)
     if seniority_matches:
+        print(f"✅ Seniority (fuzzy): {seniority_matches}")
         include.setdefault("seniority", []).extend(seniority_matches)
     
     for syn, canon in current_inv_synonyms.items():
-        if syn in raw and canon in ["junior","semi","senior"]:
-            include.setdefault("seniority", []).append(canon.capitalize())
+        if _is_whole_word(raw, syn) and canon in ["junior","semi","senior"]:
+            seniority_canon = canon.capitalize()
+            print(f"✅ Seniority (sinónimo '{syn}'→'{canon}'→'{seniority_canon}')")
+            include.setdefault("seniority", []).append(seniority_canon)
 
     # Industria - usando fuzzy matching con datos de BD
     industry_matches = _fuzzy_match(raw, current_industries, threshold=0.5)
     if industry_matches:
+        print(f"✅ Industria (fuzzy): {industry_matches}")
         include.setdefault("industry", []).extend(industry_matches)
     
     # También buscar por sinónimos de industrias
     for syn, canon in current_inv_synonyms.items():
-        if syn in raw and canon in ["tecnología", "educación", "salud", "finanzas", "retail", "manufactura", "servicios"]:
+        if _is_whole_word(raw, syn) and canon in ["tecnología", "educación", "salud", "finanzas", "retail", "manufactura", "servicios"]:
             industry_mapping = {
                 "tecnología": "Tecnología", "educación": "Educación", 
                 "salud": "Salud", "finanzas": "Finanzas",
                 "retail": "Retail", "manufactura": "Manufactura", "servicios": "Servicios"
             }
             if canon in industry_mapping:
-                include.setdefault("industry", []).append(industry_mapping[canon])
+                industry_canon = industry_mapping[canon]
+                print(f"✅ Industria (sinónimo '{syn}'→'{canon}'→'{industry_canon}')")
+                include.setdefault("industry", []).append(industry_canon)
 
     # Área - usando fuzzy matching con datos de BD
     area_matches = _fuzzy_match(raw, current_areas, threshold=0.6)
     if area_matches:
+        print(f"✅ Área (fuzzy): {area_matches}")
         include.setdefault("area", []).extend(area_matches)
     
+    # Mapping de sinónimos canónicos a nombres reales de áreas en la BD
+    area_mapping = {
+        "datos": "Desarrollo / datos",
+        "desarrollo": "Desarrollo / datos",
+        "infraestructura": "Tecnología",
+        "calidad": "Servicios Generales",
+        "soporte": "Servicios Generales",
+        "diseño": "Diseño",
+        "gastronomía": "Gastronomía",
+        "cultura": "Cultura",
+        "salud": "Salud",
+        "construcción": "Construcción",
+        "transporte": "Transporte",
+        "turismo": "Turismo",
+        "finanzas": "Finanzas",
+        "rrhh": "Recursos Humanos",
+        "tecnología": "Tecnología",
+    }
+    
     for syn, canon in current_inv_synonyms.items():
-        if syn in raw and canon in ["datos","desarrollo","infraestructura","calidad","soporte","diseño","docencia"]:
-            include.setdefault("area", []).append(canon.capitalize())
+        if _is_whole_word(raw, syn) and canon in ["datos","desarrollo","infraestructura","calidad","soporte","diseño","gastronomía","cultura","salud","construcción","transporte","turismo","finanzas","rrhh"]:
+            if canon in area_mapping:
+                area_canon = area_mapping[canon]
+                print(f"✅ Área (sinónimo '{syn}'→'{canon}'→'{area_canon}')")
+                include.setdefault("area", []).append(area_canon)
 
     # Role (con sinónimos + fuzzy matching)
     role_hits = []
@@ -398,6 +488,8 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
     # Fuzzy matching con roles de la BD
     if roles_from_db:
         role_matches = _fuzzy_match(raw, roles_from_db, threshold=0.5)
+        if role_matches:
+            print(f"✅ Role (fuzzy): {role_matches[:3]}...")  # Mostrar solo primeros 3
         role_hits.extend(role_matches)
     
     # Búsqueda exacta como fallback
@@ -407,20 +499,26 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
     
     # Sinónimos de roles
     for syn, canon in current_inv_synonyms.items():
-        if syn in raw and canon in ["data analyst","data engineer","backend developer","full stack dev","qa analyst","devops engineer","ux/ui designer"]:
+        if _is_whole_word(raw, syn) and canon in ["data analyst","data engineer","backend developer","full stack dev","qa analyst","devops engineer","ux/ui designer"]:
             mapping = {
                 "data analyst":"Data Analyst", "data engineer":"Data Engineer",
                 "backend developer":"Backend Developer", "full stack dev":"Full Stack Dev",
                 "qa analyst":"QA Analyst", "devops engineer":"DevOps Engineer", "ux/ui designer":"UX/UI Designer"
             }
-            role_hits.append(mapping[canon])
+            role_mapped = mapping[canon]
+            print(f"✅ Role (sinónimo '{syn}'→'{canon}'→'{role_mapped}')")
+            role_hits.append(role_mapped)
     
     if role_hits:
-        include.setdefault("role", []).extend(role_hits)
+        # Eliminar duplicados
+        unique_role_hits = list(dict.fromkeys(role_hits))
+        print(f"✅ Roles detectados: {unique_role_hits[:3]}...")  # Mostrar solo primeros 3
+        include.setdefault("role", []).extend(unique_role_hits)
 
     # Ubicación - usando fuzzy matching con datos de BD
     location_matches = _fuzzy_match(raw, current_locations, threshold=0.6)
     if location_matches:
+        print(f"✅ Ubicación (fuzzy): {location_matches}")
         include.setdefault("location", []).extend(location_matches)
 
     # Exclusiones por negación
@@ -452,11 +550,29 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
             if ind.lower() in term:
                 exclude.setdefault("industry", []).append(ind)
 
+    # Detectar accesibilidad y transporte
+    accessibility_keywords = ["accesibilidad", "silla de ruedas", "discapacidad", "incluyente", "inclusivo", "rampa", "ascensor", "baño accesible", "transport accesible"]
+    transport_keywords = ["transporte", "bus", "metro", "movi", "terminal", "transantiago", "red"]
+    
+    if any(keyword in raw for keyword in accessibility_keywords):
+        include.setdefault("accessibility", []).append(True)
+        print(f"✅ Accesibilidad detectada")
+    
+    if any(keyword in raw for keyword in transport_keywords):
+        include.setdefault("transport", []).append(True)
+        print(f"✅ Transporte detectado")
+
     # dedup
     for d in (include, exclude):
         for k in list(d.keys()):
             d[k] = list(dict.fromkeys(d[k]))
 
+    print(f"\n✅ Resultado final de parse_prompt:")
+    print(f"   - include: {include}")
+    print(f"   - exclude: {exclude}")
+    print(f"   - salary_min: {salary_min}")
+    print(f"   - currency: {currency or 'USD'}")
+    print("="*80)
     return include, exclude, salary_min, (currency or "USD")
 
 def parse_complex_intent(text: str) -> dict:
@@ -607,6 +723,106 @@ def parse_job_selection(text: str) -> dict:
     
     return result
 
+def parse_change_slot_intent(text: str) -> dict:
+    """
+    Detecta si el usuario quiere cambiar un slot específico.
+    Ejemplos: "cambiar industria", "quiero cambiar el área", "modificar la modalidad"
+    """
+    raw = _norm(text)
+    result = {}
+    
+    # Patrones para detectar cambio de slot
+    change_patterns = {
+        "industry": [
+            r"cambiar\s+(la\s+)?industria",
+            r"cambiar\s+(el\s+)?sector",
+            r"modificar\s+(la\s+)?industria",
+            r"cambiar\s+industria\s+a\s+([a-záéíóúñ\s]+)",
+            r"quiero\s+cambiar\s+(la\s+)?industria",
+        ],
+        "area": [
+            r"cambiar\s+(el\s+)?area",
+            r"cambiar\s+(la\s+)?area",
+            r"modificar\s+(el\s+)?area",
+            r"cambiar\s+area\s+a\s+([a-záéíóúñ\s]+)",
+            r"quiero\s+cambiar\s+(el\s+)?area",
+        ],
+        "modality": [
+            r"cambiar\s+(la\s+)?modalidad",
+            r"modificar\s+(la\s+)?modalidad",
+            r"cambiar\s+modalidad\s+a\s+([a-záéíóúñ\s]+)",
+            r"quiero\s+cambiar\s+(la\s+)?modalidad",
+        ],
+        "seniority": [
+            r"cambiar\s+(el\s+)?nivel",
+            r"cambiar\s+(la\s+)?experiencia",
+            r"modificar\s+(el\s+)?nivel",
+            r"cambiar\s+seniority",
+            r"quiero\s+cambiar\s+(el\s+)?nivel",
+        ],
+        "location": [
+            r"cambiar\s+(la\s+)?ubicacion",
+            r"cambiar\s+(la\s+)?ciudad",
+            r"modificar\s+(la\s+)?ubicacion",
+            r"cambiar\s+ubicacion\s+a\s+([a-záéíóúñ\s]+)",
+            r"quiero\s+cambiar\s+(la\s+)?ubicacion",
+        ],
+    }
+    
+    # Buscar patrones de cambio
+    for slot_key, patterns in change_patterns.items():
+        for pattern in patterns:
+            match = re.search(pattern, raw)
+            if match:
+                result["action"] = "change_slot"
+                result["slot"] = slot_key
+                # Si hay un valor nuevo en el patrón, intentar extraerlo
+                if match.groups() and match.group(1):
+                    result["new_value"] = match.group(1).strip()
+                return result
+    
+    return result
+
+def parse_show_jobs_intent(text: str) -> dict:
+    """
+    Detecta si el usuario quiere ver empleos ahora.
+    Ejemplos: "muéstrame empleos", "quiero ver trabajos", "buscar ahora", "muéstrame resultados"
+    """
+    raw = _norm(text)
+    result = {}
+    
+    # Patrones para detectar solicitud de mostrar empleos
+    show_patterns = [
+        r"mu[eé]strame\s+(los\s+)?empleos",
+        r"mu[eé]strame\s+(los\s+)?trabajos",
+        r"quiero\s+ver\s+(los\s+)?empleos",
+        r"quiero\s+ver\s+(los\s+)?trabajos",
+        r"buscar\s+(ahora|empleos|trabajos)",
+        r"mu[eé]strame\s+(los\s+)?resultados",
+        r"buscar\s+(los\s+)?empleos",
+        r"buscar\s+(los\s+)?trabajos",
+        r"encontrar\s+(los\s+)?empleos",
+        r"dame\s+(los\s+)?empleos",
+        r"dame\s+(los\s+)?trabajos",
+        r"quiero\s+ver\s+resultados",
+        r"mu[eé]strame\s+(las\s+)?opciones",
+        r"ver\s+(los\s+)?empleos",
+        r"ver\s+(los\s+)?trabajos",
+        r"listo",
+        r"listo,\s+mu[eé]strame",
+        r"ya\s+es\s+suficiente",
+        r"ya\s+est[aá]\s+bien",
+    ]
+    
+    # Buscar patrones de "mostrar empleos"
+    for pattern in show_patterns:
+        if re.search(pattern, raw):
+            result["action"] = "show_jobs"
+            result["intent"] = "request_show"
+            return result
+    
+    return result
+
 def parse_more_jobs_intent(text: str) -> dict:
     """
     Detecta si el usuario está pidiendo más empleos o diferentes empleos.
@@ -671,29 +887,96 @@ def parse_simple_response(text: str, context: str = None) -> dict:
     raw = _norm(text)
     result = {}
     
+    # Obtener sinónimos actuales para búsqueda
+    current_inv_synonyms = get_current_inv_synonyms()
+    
     # Si el contexto es industria
     if context == "industry":
-        industry_matches = _fuzzy_match(raw, get_current_industries(), threshold=0.4)
-        if industry_matches:
-            result["industry"] = industry_matches[0]  # Tomar la primera coincidencia
+        # Si el usuario escribió algo como "industria X", extraer X
+        raw_words = raw.split()
+        if len(raw_words) > 1 and "industria" in raw_words:
+            # Remover la palabra "industria" y trabajar con el resto
+            text_to_match = " ".join([w for w in raw_words if w != "industria"])
+            raw = text_to_match
+        
+        # Primero intentar con sinónimos
+        for syn, canon in current_inv_synonyms.items():
+            if _is_whole_word(raw, syn) and canon in ["tecnología", "educación", "salud", "finanzas", "retail", "manufactura", "servicios"]:
+                industry_mapping = {
+                    "tecnología": "Tecnología", "educación": "Educación", 
+                    "salud": "Salud", "finanzas": "Finanzas",
+                    "retail": "Retail", "manufactura": "Manufactura", "servicios": "Servicios"
+                }
+                if canon in industry_mapping:
+                    result["industry"] = industry_mapping[canon]
+                    break
+        
+        # Si no se encontró con sinónimos, intentar fuzzy matching
+        if not result.get("industry"):
+            industry_matches = _fuzzy_match(raw, get_current_industries(), threshold=0.4)
+            if industry_matches:
+                result["industry"] = industry_matches[0]
     
     # Si el contexto es modalidad
     elif context == "modality":
-        modality_matches = _fuzzy_match(raw, get_current_modalities(), threshold=0.4)
-        if modality_matches:
-            result["modality"] = modality_matches[0]
+        # Primero intentar con sinónimos
+        for syn, canon in current_inv_synonyms.items():
+            if _is_whole_word(raw, syn) and canon in ["remoto","híbrido","presencial"]:
+                modality_canon = {"remoto":"Remoto","híbrido":"Híbrido","presencial":"Presencial"}[canon]
+                result["modality"] = modality_canon
+                break
+        
+        # Si no se encontró con sinónimos, intentar fuzzy matching
+        if not result.get("modality"):
+            modality_matches = _fuzzy_match(raw, get_current_modalities(), threshold=0.4)
+            if modality_matches:
+                result["modality"] = modality_matches[0]
     
     # Si el contexto es seniority
     elif context == "seniority":
-        seniority_matches = _fuzzy_match(raw, get_current_seniorities(), threshold=0.4)
-        if seniority_matches:
-            result["seniority"] = seniority_matches[0]
+        # Primero intentar con sinónimos
+        for syn, canon in current_inv_synonyms.items():
+            if _is_whole_word(raw, syn) and canon in ["junior","semi","senior"]:
+                result["seniority"] = canon.capitalize()
+                break
+        
+        # Si no se encontró con sinónimos, intentar fuzzy matching
+        if not result.get("seniority"):
+            seniority_matches = _fuzzy_match(raw, get_current_seniorities(), threshold=0.4)
+            if seniority_matches:
+                result["seniority"] = seniority_matches[0]
     
     # Si el contexto es área
     elif context == "area":
-        area_matches = _fuzzy_match(raw, get_current_areas(), threshold=0.4)
-        if area_matches:
-            result["area"] = area_matches[0]
+        # Primero intentar con sinónimos
+        area_mapping = {
+            "datos": "Desarrollo / datos",
+            "desarrollo": "Desarrollo / datos",
+            "infraestructura": "Tecnología",
+            "calidad": "Servicios Generales",
+            "soporte": "Servicios Generales",
+            "diseño": "Diseño",
+            "gastronomía": "Gastronomía",
+            "cultura": "Cultura",
+            "salud": "Salud",
+            "construcción": "Construcción",
+            "transporte": "Transporte",
+            "turismo": "Turismo",
+            "finanzas": "Finanzas",
+            "rrhh": "Recursos Humanos",
+            "tecnología": "Tecnología",
+        }
+        
+        for syn, canon in current_inv_synonyms.items():
+            if _is_whole_word(raw, syn) and canon in area_mapping:
+                result["area"] = area_mapping[canon]
+                break
+        
+        # Si no se encontró con sinónimos, intentar fuzzy matching
+        if not result.get("area"):
+            area_matches = _fuzzy_match(raw, get_current_areas(), threshold=0.4)
+            if area_matches:
+                result["area"] = area_matches[0]
     
     # Si el contexto es ubicación
     elif context == "location":

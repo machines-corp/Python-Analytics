@@ -30,13 +30,17 @@ FROM python:3.12-slim AS runtime
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
-# Dependencias de runtime + librerías que Chromium necesita
+# Dependencias de runtime + librerías que Chromium/Playwright necesitan
+# Lista consolidada para Debian slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash libpq5 curl wget gnupg ca-certificates \
+    bash curl wget gnupg ca-certificates \
+    libpq5 \
+    # Playwright/Chromium deps
     libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 \
-    libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 \
-    libgbm1 libasound2 libpangocairo-1.0-0 libpango-1.0-0 \
-    libgtk-3-0 libxshmfence1 fonts-liberation \
+    libxkbcommon0 libxcomposite1 libxdamage1 libxrandr2 libxshmfence1 \
+    libgbm1 libasound2 libpangocairo-1.0-0 libpango-1.0-0 libgtk-3-0 \
+    libx11-6 libx11-xcb1 libxext6 libxi6 libxrender1 \
+    libcairo2 libatspi2.0-0 libdbus-1-3 fonts-liberation \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -45,19 +49,21 @@ WORKDIR /app
 COPY --from=builder /wheels /wheels
 RUN pip install --no-cache /wheels/*
 
-# Instalar navegadores de Playwright (solo Chromium) en ruta del proyecto
-ENV PLAYWRIGHT_BROWSERS_PATH=/app/.pw-browsers
-RUN python -m playwright install chromium
-
 # Crear usuario no root
 RUN useradd -ms /bin/bash appuser
 ENV PATH="/home/appuser/.local/bin:${PATH}"
-USER appuser
 
-# Copiar código de la app
+# Copiar código de la app (propietario: appuser)
 COPY --chown=appuser:appuser . /app
 
+# Playwright: instalar browsers como appuser en su cache
+USER appuser
+ENV PLAYWRIGHT_BROWSERS_PATH=/home/appuser/.cache/ms-playwright
+RUN mkdir -p /home/appuser/.cache/ms-playwright && \
+    python -m playwright install chromium
+
 # Entrypoint
+USER appuser
 RUN chmod +x /app/entrypoint.sh
 EXPOSE 8000
 CMD ["/app/entrypoint.sh"]
