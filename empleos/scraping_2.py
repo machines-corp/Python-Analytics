@@ -7,8 +7,8 @@ Salida: JSONL (+ CSV opcional)
 Ejemplo:
   python empleos/scraping_2.py \
     --pages 2 \
-    --out-json empleos_laborum_discapacidad.jsonl \
-    --out-csv empleos_laborum_discapacidad.csv
+    --out-json out/empleos_laborum_discapacidad.jsonl \
+    --out-csv out/empleos_laborum_discapacidad.csv
 """
 
 import os, re, json, time, random, argparse, hashlib, sys
@@ -323,8 +323,8 @@ def main():
     ap.add_argument("--pages", type=int, default=int(os.getenv("PAGES", "2")), help="ciclos de scroll del listado")
     ap.add_argument("--sleep-min", type=float, default=float(os.getenv("SLEEP_MIN", "1.0")))
     ap.add_argument("--sleep-max", type=float, default=float(os.getenv("SLEEP_MAX", "2.0")))
-    ap.add_argument("--out-json", type=str, default=os.getenv("OUT_JSON", "empleos_laborum_discapacidad.jsonl"))
-    ap.add_argument("--out-csv", type=str, default=os.getenv("OUT_CSV", "empleos_laborum_discapacidad.csv"))
+    ap.add_argument("--out-json", type=str, default=os.getenv("OUT_JSON", "out/empleos_laborum_discapacidad.jsonl"))
+    ap.add_argument("--out-csv", type=str, default=os.getenv("OUT_CSV", "out/empleos_laborum_discapacidad.csv"))
     args = ap.parse_args()
 
     # 1) Recolectar URLs del listado

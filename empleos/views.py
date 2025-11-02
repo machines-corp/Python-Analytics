@@ -1,7 +1,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from .nlp import parse_prompt, parse_simple_response, parse_complex_intent, parse_job_selection, parse_more_jobs_intent, get_industries_from_db, get_modalities_from_db, get_areas_from_db, get_seniorities_from_db, get_locations_from_db, get_roles_from_db
+from .nlp import parse_prompt, parse_simple_response, parse_complex_intent, parse_job_selection, parse_more_jobs_intent, parse_change_slot_intent, parse_show_jobs_intent, get_industries_from_db, get_modalities_from_db, get_areas_from_db, get_seniorities_from_db, get_locations_from_db, get_roles_from_db
 from .engine import decide_jobs, get_job_pagination_info
 from .models import JobPosting, Conversation
 from django.db import ProgrammingError, OperationalError
@@ -44,67 +44,172 @@ def _roles():
 
 def _merge_state_with_prompt(state: dict, prompt: str):
     """Intenta parsear el texto y completar slots automáticamente."""
+    print("\n" + "="*80)
+    print("💬 _MERGE_STATE_WITH_PROMPT - Procesando mensaje del usuario")
+    print("="*80)
+    print(f"📥 Prompt: '{prompt}'")
+    print(f"📋 Estado actual: {state}")
+    
     # Primero verificar si es una selección de empleo
     job_selection = parse_job_selection(prompt)
     if job_selection.get("action") == "select_job":
+        print(f"✅ Detectado: Selección de empleo - {job_selection}")
+        print("="*80)
         return {}, {}, None, job_selection  # Retornar información de selección
+    
+    # Verificar si quiere cambiar un slot específico
+    change_slot_intent = parse_change_slot_intent(prompt)
+    if change_slot_intent.get("action") == "change_slot":
+        slot_to_change = change_slot_intent.get("slot")
+        new_value = change_slot_intent.get("new_value")
+        print(f"✅ Detectado: Cambio de slot '{slot_to_change}'")
+        if new_value:
+            print(f"   - Nuevo valor detectado: {new_value}")
+        else:
+            print(f"   - Esperando nuevo valor en siguiente mensaje")
+        print("="*80)
+        return {}, {}, None, change_slot_intent  # Retornar información de cambio de slot
     
     # Verificar si pide más empleos o diferentes empleos
     more_jobs_intent = parse_more_jobs_intent(prompt)
     if more_jobs_intent.get("action") == "more_jobs":
+        print(f"✅ Detectado: Solicitud de más empleos - {more_jobs_intent}")
+        print("="*80)
         # NO modificar el estado cuando se piden más empleos
         return {}, {}, None, more_jobs_intent  # Retornar información de solicitud de más empleos
+    
+    # Verificar si quiere ver empleos ahora
+    show_jobs_intent = parse_show_jobs_intent(prompt)
+    if show_jobs_intent.get("action") == "show_jobs":
+        print(f"✅ Detectado: Solicitud de mostrar empleos - {show_jobs_intent}")
+        print("="*80)
+        return {}, {}, None, show_jobs_intent  # Retornar información de solicitud de mostrar empleos
     
     # Luego intentar parsing de intenciones complejas
     complex_intent = parse_complex_intent(prompt)
     if complex_intent:
+        print(f"✅ Detectado: Intención compleja - {complex_intent}")
         encouraging_response = None
         for key, value in complex_intent.items():
-            if key in ["industry", "area", "modality", "seniority"]:
-                encouraging_response = get_encouraging_response(key, value)
-                break
+            # Solo actualizar slots que tienen valores válidos Y que no estén ya definidos
+            if key in ["industry", "area", "modality", "seniority", "location", "accessibility", "transport"]:
+                if value and value not in (None, "", []):
+                    # NO sobrescribir si ya existe un valor en el estado
+                    if key not in state or not state[key] or state[key] in (None, "", []):
+                        state[key] = value
+                        if not encouraging_response:
+                            encouraging_response = get_encouraging_response(key, value)
+                        print(f"   ✅ Slot '{key}' actualizado a: {value}")
+                    else:
+                        print(f"   ⚠️  Slot '{key}' ya tiene valor: {state[key]}, ignorando: {value}")
         
-        state.update(complex_intent)
+        print(f"📋 Estado actualizado: {state}")
+        print("="*80)
         return {}, {}, encouraging_response, None
     
     # Después intentar parsing contextual si sabemos qué slot estamos llenando
-    next_slot = next_missing_slot(state)
+    # O si estamos cambiando un slot específico
+    changing_slot = state.get("changing_slot")
+    next_slot = changing_slot if changing_slot else next_missing_slot(state)
     encouraging_response = None
+    print(f"🔍 Slot siguiente: {next_slot} {'(cambiando)' if changing_slot else '(normal)'}")
     
     if next_slot:
         # Usar parsing contextual para el slot específico
         contextual_result = parse_simple_response(prompt, next_slot)
         if contextual_result:
-            # Generar respuesta empática para la elección
+            print(f"✅ Parsing contextual exitoso: {contextual_result}")
+            # Si estamos cambiando un slot, permitir sobrescribir
             for key, value in contextual_result.items():
-                if key in ["industry", "area", "modality", "seniority"]:
-                    encouraging_response = get_encouraging_response(key, value)
-                    break
+                if value and value not in (None, "", []):
+                    # Si estamos cambiando este slot específico, permitir sobrescribir
+                    if changing_slot == key:
+                        state[key] = value
+                        state.pop("changing_slot", None)  # Limpiar flag de cambio
+                        if not encouraging_response:
+                            encouraging_response = get_encouraging_response(key, value)
+                        print(f"   ✅ Slot '{key}' actualizado a: {value} (cambio permitido)")
+                    # NO sobrescribir si ya existe un valor en el estado (solo si no estamos cambiando)
+                    elif key not in state or not state[key] or state[key] in (None, "", []):
+                        state[key] = value
+                        if not encouraging_response:
+                            encouraging_response = get_encouraging_response(key, value)
+                        print(f"   ✅ Slot '{key}' actualizado a: {value}")
+                    else:
+                        print(f"   ⚠️  Slot '{key}' ya tiene valor: {state[key]}, ignorando: {value}")
             
-            state.update(contextual_result)
+            print(f"📋 Estado actualizado: {state}")
+            print("="*80)
             return {}, {}, encouraging_response, None  # Retornar también la respuesta empática
+        else:
+            print(f"⚠️  Parsing contextual falló para '{next_slot}'")
     
     # Si no hay contexto o el parsing contextual falló, usar parsing completo
+    print(f"🔄 Intentando parsing completo del prompt...")
     include, exclude, salary_min, currency = parse_prompt(prompt, _roles())
+    print(f"📊 Resultado parsing:")
+    print(f"   - include: {include}")
+    print(f"   - exclude: {exclude}")
+    print(f"   - salary_min: {salary_min}, currency: {currency}")
     
-    # map a nuestro state
-    if include.get("industry"): 
-        state["industry"] = include["industry"][0]
-        encouraging_response = get_encouraging_response("industry", include["industry"][0])
-    if include.get("area"):     
-        state["area"] = include["area"][0]
-        if not encouraging_response:
-            encouraging_response = get_encouraging_response("area", include["area"][0])
-    if include.get("role"):     state["role"] = include["role"][0]
-    if include.get("seniority"):
-        state["seniority"] = include["seniority"][0]
-        if not encouraging_response:
-            encouraging_response = get_encouraging_response("seniority", include["seniority"][0])
-    if include.get("modality"): 
-        state["modality"] = include["modality"][0]
-        if not encouraging_response:
-            encouraging_response = get_encouraging_response("modality", include["modality"][0])
-    if include.get("location"): state["location"] = include["location"][0]
+    # map a nuestro state - SOLO actualizar si hay valor en el parsing Y no existe ya
+    if include.get("industry") and include["industry"]: 
+        if "industry" not in state or not state["industry"]:
+            state["industry"] = include["industry"][0]
+            if not encouraging_response:
+                encouraging_response = get_encouraging_response("industry", include["industry"][0])
+            print(f"   ✅ Slot 'industry' actualizado a: {include['industry'][0]}")
+        else:
+            print(f"   ⚠️  Slot 'industry' ya tiene valor: {state['industry']}, ignorando: {include['industry'][0]}")
+    if include.get("area") and include["area"]:     
+        if "area" not in state or not state["area"]:
+            state["area"] = include["area"][0]
+            if not encouraging_response:
+                encouraging_response = get_encouraging_response("area", include["area"][0])
+            print(f"   ✅ Slot 'area' actualizado a: {include['area'][0]}")
+        else:
+            print(f"   ⚠️  Slot 'area' ya tiene valor: {state['area']}, ignorando: {include['area'][0]}")
+    if include.get("role") and include["role"]:     
+        if "role" not in state or not state["role"]:
+            state["role"] = include["role"][0]
+    if include.get("seniority") and include["seniority"]:
+        if "seniority" not in state or not state["seniority"]:
+            state["seniority"] = include["seniority"][0]
+            if not encouraging_response:
+                encouraging_response = get_encouraging_response("seniority", include["seniority"][0])
+            print(f"   ✅ Slot 'seniority' actualizado a: {include['seniority'][0]}")
+        else:
+            print(f"   ⚠️  Slot 'seniority' ya tiene valor: {state['seniority']}, ignorando: {include['seniority'][0]}")
+    if include.get("modality") and include["modality"]: 
+        if "modality" not in state or not state["modality"]:
+            state["modality"] = include["modality"][0]
+            if not encouraging_response:
+                encouraging_response = get_encouraging_response("modality", include["modality"][0])
+            print(f"   ✅ Slot 'modality' actualizado a: {include['modality'][0]}")
+        else:
+            print(f"   ⚠️  Slot 'modality' ya tiene valor: {state['modality']}, ignorando: {include['modality'][0]}")
+    if include.get("location") and include["location"]: 
+        if "location" not in state or not state["location"]:
+            state["location"] = include["location"][0]
+            if not encouraging_response:
+                encouraging_response = get_encouraging_response("location", include["location"][0])
+            print(f"   ✅ Slot 'location' actualizado a: {include['location'][0]}")
+        else:
+            print(f"   ⚠️  Slot 'location' ya tiene valor: {state['location']}, ignorando: {include['location'][0]}")
+    if include.get("accessibility") and include["accessibility"]:
+        if "accessibility" not in state or not state["accessibility"]:
+            state["accessibility"] = include["accessibility"][0]
+            if not encouraging_response:
+                encouraging_response = get_encouraging_response("accessibility", "sí")
+            print(f"   ✅ Slot 'accessibility' actualizado")
+        else:
+            print(f"   ⚠️  Slot 'accessibility' ya tiene valor, ignorando nuevo valor")
+    if include.get("transport") and include["transport"]:
+        if "transport" not in state or not state["transport"]:
+            state["transport"] = include["transport"][0]
+            print(f"   ✅ Slot 'transport' actualizado")
+        else:
+            print(f"   ⚠️  Slot 'transport' ya tiene valor, ignorando nuevo valor")
 
     if "exclude" not in state: state["exclude"] = []
     # exclude puede venir mapeado en varias keys; compactamos a lista de palabras prohibidas
@@ -116,24 +221,34 @@ def _merge_state_with_prompt(state: dict, prompt: str):
 
     if salary_min:
         state["salary"] = {"min": salary_min, "currency": currency}
+        if not encouraging_response:
+            encouraging_response = get_encouraging_response("salary", f"{salary_min} {currency}")
+    
+    print(f"📋 Estado final: {state}")
+    print("="*80)
     return include, exclude, encouraging_response, None
 
 def _serialize_job_results(results):
     """Convierte los resultados de empleos a diccionarios serializables para JSON."""
+    # Los resultados ahora vienen como diccionarios desde engine._get_varied_results
+    # ya con rating convertido a float, así que solo necesitamos serializar fechas
     serializable_results = []
     for job in results:
-        serializable_job = {}
-        for key, value in job.items():
-            if hasattr(value, 'isoformat'):  # Para objetos date/datetime
-                serializable_job[key] = value.isoformat()
-            elif hasattr(value, '__dict__'):  # Para objetos complejos
-                serializable_job[key] = str(value)
-            else:
-                serializable_job[key] = value
+        serializable_job = job.copy()
+        
+        # Asegurar que las fechas sean serializables
+        if 'published_date' in serializable_job and hasattr(serializable_job['published_date'], 'isoformat'):
+            serializable_job['published_date'] = serializable_job['published_date'].isoformat()
+        
         serializable_results.append(serializable_job)
     return serializable_results
 
 def _build_filters_from_state(state: dict):
+    print("\n" + "="*80)
+    print("🔧 _BUILD_FILTERS_FROM_STATE - Construyendo filtros")
+    print("="*80)
+    print(f"📥 Estado recibido: {state}")
+    
     include = {}
     exclude = {}
     sal_min = None
@@ -145,6 +260,8 @@ def _build_filters_from_state(state: dict):
     if v := state.get("seniority"):include["seniority"] = [v]
     if v := state.get("modality"): include["modality"] = [v]
     if v := state.get("location"): include["location"] = [v]
+    if v := state.get("accessibility"): include["accessibility"] = [v]
+    if v := state.get("transport"): include["transport"] = [v]
 
     if ex := state.get("exclude"):
         # si el usuario guardó exclusiones como texto libre, las tratamos como exclusión de role/area
@@ -156,6 +273,11 @@ def _build_filters_from_state(state: dict):
         sal_min = int(salary["min"])
         currency = salary.get("currency") or "USD"
 
+    print(f"📊 Filtros construidos:")
+    print(f"   - include: {include}")
+    print(f"   - exclude: {exclude}")
+    print(f"   - sal_min: {sal_min}, currency: {currency}")
+    print("="*80)
     return include, exclude, sal_min, currency
 
 class ChatStart(APIView):
@@ -179,23 +301,141 @@ class ChatMessage(APIView):
     - una recomendación (top 3) si ya hay suficiente info o si el usuario pide 'recomienda'/'listo'.
     """
     def post(self, request, conversation_id:int):
+        print("\n" + "="*80)
+        print("🚀 CHAT_MESSAGE - Nueva solicitud recibida")
+        print("="*80)
+        print(f"💬 Conversation ID: {conversation_id}")
+        
         text = (request.data.get("message") or "").strip()
+        print(f"📥 Mensaje: '{text}'")
+        
         if not text:
+            print("❌ Mensaje vacío")
             return Response({"error":"message vacío"}, status=400)
 
         try:
             conv = Conversation.objects.get(id=conversation_id)
+            print(f"✅ Conversación encontrada: {conv.id}")
         except Conversation.DoesNotExist:
+            print(f"❌ Conversación {conversation_id} no encontrada")
             return Response({"error":"Conversación no encontrada"}, status=404)
 
         # Guarda mensaje
         conv.history.append({"role":"user","text": text})
 
         # Intenta mapear automáticamente lo que escribió al estado
-        include, exclude, encouraging_response, job_selection = _merge_state_with_prompt(conv.state, text)
+        include, exclude, encouraging_response, action_intent = _merge_state_with_prompt(conv.state, text)
+        print(f"🔄 Después de merge_state:")
+        print(f"   - include: {include}")
+        print(f"   - exclude: {exclude}")
+        print(f"   - action_intent: {action_intent}")
+
+        # Si NO se detectó NADA (ninguna intención, ningún valor)
+        # y estamos esperando una respuesta específica, significa que no se entendió
+        if not action_intent and not include and not encouraging_response:
+            print("⚠️ No se detectó ninguna intención ni valor - el usuario escribió algo no reconocible")
+            nxt = next_missing_slot(conv.state)
+            if nxt:
+                q = question_for(nxt)
+                # Mensaje empático indicando que no se entendió
+                slot_labels = {
+                    "industry": "industria",
+                    "area": "área funcional",
+                    "modality": "modalidad de trabajo",
+                    "seniority": "nivel de experiencia",
+                    "location": "ubicación"
+                }
+                slot_label = slot_labels.get(nxt, nxt)
+                message = f"😕 Lo siento, no pude entender tu respuesta sobre {slot_label}. \n\n"
+                
+                # Dar opciones según el slot
+                if nxt == "industry":
+                    message += "Por favor, dime una **industria** como: Tecnología, Educación, Salud, Finanzas, Retail, etc."
+                elif nxt == "area":
+                    message += "Por favor, dime un **área funcional** como: Diseño, Desarrollo, Datos, Gastronomía, Cultura, Salud, etc."
+                elif nxt == "modality":
+                    message += "Por favor, dime una **modalidad** como: Remoto, Híbrido o Presencial."
+                elif nxt == "seniority":
+                    message += "Por favor, dime tu **nivel de experiencia**: Junior, Semi o Senior."
+                elif nxt == "location":
+                    message += "Por favor, dime una **ubicación** como: Santiago, Valparaíso, Región Metropolitana, etc."
+                else:
+                    message += q
+                
+                conv.history.append({"role":"system","text": message})
+                conv.save()
+                return Response({"type":"unclear", "message": message, "filled": conv.state})
+        
+        # Si el usuario quiere cambiar un slot específico
+        if action_intent and action_intent.get("action") == "change_slot":
+            slot_to_change = action_intent.get("slot")
+            new_value = action_intent.get("new_value")
+            
+            # Si hay un nuevo valor en el mismo mensaje, actualizarlo
+            if new_value:
+                # Intentar parsear el nuevo valor
+                parsed_new = parse_simple_response(new_value, slot_to_change)
+                if parsed_new and slot_to_change in parsed_new:
+                    conv.state[slot_to_change] = parsed_new[slot_to_change]
+                    conv.state.pop("changing_slot", None)  # Limpiar flag de cambio
+                    conv.save()
+                    message = f"✅ Perfecto, he actualizado la {slot_to_change} a '{parsed_new[slot_to_change]}'. ¿Quieres agregar más información o ver empleos ahora?"
+                else:
+                    # Si no se puede parsear, usar el valor directo
+                    conv.state[slot_to_change] = new_value
+                    conv.state.pop("changing_slot", None)  # Limpiar flag de cambio
+                    conv.save()
+                    message = f"✅ Perfecto, he actualizado la {slot_to_change} a '{new_value}'. ¿Quieres agregar más información o ver empleos ahora?"
+            else:
+                # Si no hay valor nuevo, preguntar por el nuevo valor y guardar que estamos cambiando este slot
+                slot_labels = {
+                    "industry": "industria",
+                    "area": "área",
+                    "modality": "modalidad",
+                    "seniority": "nivel de experiencia",
+                    "location": "ubicación"
+                }
+                slot_label = slot_labels.get(slot_to_change, slot_to_change)
+                conv.state["changing_slot"] = slot_to_change  # Marcar que estamos cambiando este slot
+                conv.save()
+                message = f"¡Por supuesto! 👌 ¿Qué {slot_label} te gustaría tener? Puedes decirme algo como '{question_for(slot_to_change)}'"
+            
+            conv.history.append({"role":"system","text": message})
+            conv.save()
+            return Response({"type": "slot_change", "message": message, "slot": slot_to_change})
+        
+        # Si el usuario quiere ver empleos ahora
+        if action_intent and action_intent.get("action") == "show_jobs":
+            print("\n✅ Usuario solicita ver empleos explícitamente")
+            include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
+            results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=0, variety=False)
+            
+            # Obtener información de paginación
+            pagination_info = get_job_pagination_info(include, exclude, sal_min, currency)
+            
+            # Guardar resultados en el estado para selección posterior
+            conv.state["last_results"] = _serialize_job_results(results)
+            conv.state["current_offset"] = 3  # Preparar para la próxima búsqueda
+            conv.save()
+            
+            # Mensaje con información de paginación
+            message = "¡Perfecto! Te dejo mis mejores sugerencias basadas en tus preferencias. 🎯"
+            if pagination_info["has_more"]:
+                message += f"\n\n💡 Si quieres ver más empleos, solo escribe 'más empleos' o 'muéstrame más'. Tengo {pagination_info['total_jobs']} empleos disponibles para ti."
+            
+            reply = {
+                "type": "results", 
+                "results": results, 
+                "trace": steps,
+                "pagination_info": pagination_info,
+                "message": message
+            }
+            conv.history.append({"role":"system","text": message})
+            conv.save()
+            return Response(reply)
 
         # Si el usuario está pidiendo más empleos
-        if job_selection and job_selection.get("action") == "more_jobs":
+        if action_intent and action_intent.get("action") == "more_jobs":
             # Obtener información de paginación
             include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
             pagination_info = get_job_pagination_info(include, exclude, sal_min, currency)
@@ -238,9 +478,9 @@ class ChatMessage(APIView):
                 return Response({"type": "no_more_results", "message": message})
 
         # Si el usuario está seleccionando un empleo específico
-        if job_selection and job_selection.get("action") == "select_job":
+        if action_intent and action_intent.get("action") == "select_job":
             # Buscar el empleo en los resultados anteriores
-            selected_index = job_selection.get("selected_job_index", 0)
+            selected_index = action_intent.get("selected_job_index", 0)
             
             # Obtener los últimos resultados de la conversación
             last_results = conv.state.get("last_results", [])
@@ -277,41 +517,15 @@ class ChatMessage(APIView):
                 conv.save()
                 return Response({"type": "error", "message": "No hay empleos disponibles para seleccionar"})
 
-        # Si el usuario pide recomendar ya:
-        if any(w in text.lower() for w in ["listo","recomienda","muestrame","sugerencias","ofrecer","buscar","empleos","trabajos"]):
-            include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
-            results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=0, variety=False)
-            
-            # Obtener información de paginación
-            pagination_info = get_job_pagination_info(include, exclude, sal_min, currency)
-            
-            # Guardar resultados en el estado para selección posterior
-            conv.state["last_results"] = _serialize_job_results(results)
-            conv.state["current_offset"] = 3  # Preparar para la próxima búsqueda
-            conv.save()
-            
-            # Mensaje con información de paginación
-            message = "¡Perfecto! Te dejo mis mejores sugerencias basadas en tus preferencias. 🎯"
-            if pagination_info["has_more"]:
-                message += f"\n\n💡 Si quieres ver más empleos, solo escribe 'más empleos' o 'muéstrame más'. Tengo {pagination_info['total_jobs']} empleos disponibles para ti."
-            
-            reply = {
-                "type": "results", 
-                "results": results, 
-                "trace": steps,
-                "pagination_info": pagination_info,
-                "message": message
-            }
-            conv.history.append({"role":"system","text": message})
-            conv.save()
-            return Response(reply)
-
         # Si faltan slots, pregunta el siguiente
         nxt = next_missing_slot(conv.state)
         if nxt:
-            # Si ya tenemos información suficiente (al menos 2 campos), ofrecer mostrar empleos
-            filled_slots = sum(1 for k, v in conv.state.items() if v and v not in (None, "", []))
-            if filled_slots >= 2:
+            # Contar solo los slots principales que están llenos
+            main_slots = ["industry", "area", "modality", "seniority", "location"]
+            filled_main_slots = sum(1 for k in main_slots if conv.state.get(k) and conv.state.get(k) not in (None, "", []))
+            
+            # Si ya tenemos información suficiente (al menos 2 campos principales), ofrecer mostrar empleos
+            if filled_main_slots >= 2:
                 q = question_for(nxt)
                 
                 # Construir mensaje con respuesta empática y opción de mostrar empleos
@@ -319,11 +533,12 @@ class ChatMessage(APIView):
                 if encouraging_response:
                     message = f"{encouraging_response}\n\n{q}"
                 
-                message += "\n\n💡 ¿O prefieres que te muestre empleos con la información que ya tengo? Solo escribe 'mostrar empleos' o 'buscar'."
+                # Mensaje más claro con opciones
+                message += "\n\n💡 **O si prefieres, puedo mostrarte empleos ahora con la información que ya tengo.** Solo di 'muéstrame empleos' o 'buscar' para ver los resultados."
                 
                 conv.history.append({"role":"system","text": message})
                 conv.save()
-                return Response({"type":"question", "message": message, "filled": conv.state})
+                return Response({"type":"question", "message": message, "filled": conv.state, "can_show_jobs": True})
             else:
                 q = question_for(nxt)
                 
@@ -337,6 +552,7 @@ class ChatMessage(APIView):
                 return Response({"type":"question", "message": message, "filled": conv.state})
 
         # Si no faltan slots, devuelve recomendaciones
+        print("\n✅ Todos los slots completos, generando recomendaciones")
         include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
         results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=0, variety=False)
         
