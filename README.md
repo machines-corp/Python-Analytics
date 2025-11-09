@@ -23,3 +23,12 @@ El sistema está funcionando correctamente y encontró:
 13 ubicaciones reales (Santiago, Concepción, Talca, etc.)
 191 roles reales de la base de datos
 27 categorías de sinónimos dinámicos generados
+
+# Importar empleos con límite por defecto (100)
+python manage.py import_bne
+
+# Importar con límite personalizado
+python manage.py import_bne --limit 50
+
+# Importar con offset para paginación
+python manage.py import_bne --limit 100 --offset 100
