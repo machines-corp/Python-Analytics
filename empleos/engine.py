@@ -24,10 +24,13 @@ def _apply(queryset, include:dict, exclude:dict, salary_min:int|None, currency:s
     print(f"   - Queryset inicial: {qs.count()} empleos")
     
     # Mapeo de campos del modelo Job a JobPosting
+    # IMPORTANTE: En el frontend:
+    #   - "industria" → campo `area` en BD (ej: "Tecnología", "Servicios Generales")
+    #   - "área funcional" → campo `subarea` en BD (ej: "Desarrollo de Software", "Contabilidad y Tesorería")
     field_mapping = {
-        'industry': 'area',  # Industry se mapea a area (ej: "Tecnología" → area="Tecnología")
-        'area': 'area',      # Area se mapea a area (ej: "Diseño" → area="Diseño")  
-        'role': 'title',  # Mapear role a title
+        'industry': 'area',        # Industry se mapea a area (ej: "Tecnología" → area="Tecnología")
+        'area': 'subarea',         # Area funcional se mapea a subarea (ej: "Desarrollo de Software" → subarea="Desarrollo de Software")
+        'role': 'title',           # Mapear role a title
         'seniority': 'min_experience',  # Mapear seniority a min_experience
         'modality': 'work_modality',
         'location': 'location__raw_text',
@@ -71,17 +74,22 @@ def _apply(queryset, include:dict, exclude:dict, salary_min:int|None, currency:s
                         q |= Q(**{f"{mapped_field}__icontains": v})
                         print(f"      ⏺️  Condición fallback: {mapped_field}__icontains='{v}'")
                 elif attr == 'industry':
-                    # Industry se busca en area
-                    q |= Q(**{f"area__icontains": v})
-                    print(f"      ⏺️  Condición: area__icontains='{v}'")
-                elif attr == 'area':
-                    # Para area, buscar en area Y subarea
-                    area_q = Q(**{f"area__icontains": v})
-                    # También buscar en subarea si está disponible
-                    subarea_q = Q(**{"subarea__icontains": v})
-                    combined_q = area_q | subarea_q
+                    # Industry se busca en area - usar exact match primero, luego icontains como fallback
+                    exact_q = Q(**{f"area__iexact": v})
+                    contains_q = Q(**{f"area__icontains": v})
+                    # Intentar exacto primero, pero también incluir contains para casos edge
+                    combined_q = exact_q | contains_q
                     q |= combined_q
-                    print(f"      ⏺️  Condición: area__icontains O subarea__icontains='{v}'")
+                    print(f"      ⏺️  Condición: area__iexact='{v}' O area__icontains='{v}'")
+                elif attr == 'area':
+                    # Para área funcional, buscar en subarea (NO en area, que es para industria)
+                    # Usar exact match primero, luego contains como fallback
+                    subarea_exact_q = Q(**{"subarea__iexact": v})
+                    subarea_contains_q = Q(**{"subarea__icontains": v})
+                    # Priorizar exact match, pero permitir contains como fallback
+                    combined_q = subarea_exact_q | (subarea_contains_q & ~subarea_exact_q)
+                    q |= combined_q
+                    print(f"      ⏺️  Condición: subarea__iexact='{v}' O (subarea__icontains='{v}' sin exact)")
                 elif attr == 'modality':
                     # Para modalidad, usar búsqueda insensible a mayúsculas
                     q |= Q(**{f"{mapped_field}__iexact": v})
@@ -132,17 +140,22 @@ def _apply(queryset, include:dict, exclude:dict, salary_min:int|None, currency:s
                         q |= Q(**{f"{mapped_field}__icontains": v})
                         print(f"      ⏺️  Condición fallback: {mapped_field}__icontains='{v}'")
                 elif attr == 'industry':
-                    # Industry se busca en area
-                    q |= Q(**{f"area__icontains": v})
-                    print(f"      ⏺️  Condición: area__icontains='{v}'")
-                elif attr == 'area':
-                    # Para area, buscar en area Y subarea
-                    area_q = Q(**{f"area__icontains": v})
-                    # También buscar en subarea si está disponible
-                    subarea_q = Q(**{"subarea__icontains": v})
-                    combined_q = area_q | subarea_q
+                    # Industry se busca en area - usar exact match primero, luego icontains como fallback
+                    exact_q = Q(**{f"area__iexact": v})
+                    contains_q = Q(**{f"area__icontains": v})
+                    # Intentar exacto primero, pero también incluir contains para casos edge
+                    combined_q = exact_q | contains_q
                     q |= combined_q
-                    print(f"      ⏺️  Condición: area__icontains O subarea__icontains='{v}'")
+                    print(f"      ⏺️  Condición: area__iexact='{v}' O area__icontains='{v}'")
+                elif attr == 'area':
+                    # Para área funcional, buscar en subarea (NO en area, que es para industria)
+                    # Usar exact match primero, luego contains como fallback
+                    subarea_exact_q = Q(**{"subarea__iexact": v})
+                    subarea_contains_q = Q(**{"subarea__icontains": v})
+                    # Priorizar exact match, pero permitir contains como fallback
+                    combined_q = subarea_exact_q | (subarea_contains_q & ~subarea_exact_q)
+                    q |= combined_q
+                    print(f"      ⏺️  Condición: subarea__iexact='{v}' O (subarea__icontains='{v}' sin exact)")
                 elif attr == 'modality':
                     q |= Q(**{f"{mapped_field}__iexact": v})
                     print(f"      ⏺️  Condición: {mapped_field}__iexact='{v}'")

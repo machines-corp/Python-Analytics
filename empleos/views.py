@@ -243,6 +243,14 @@ def _serialize_job_results(results):
         serializable_results.append(serializable_job)
     return serializable_results
 
+def _get_filtered_state_for_frontend(state: dict):
+    """
+    Filtra el estado de la conversación para enviar solo los slots principales al frontend.
+    Esto evita enviar información interna como 'last_results', 'current_offset', etc.
+    """
+    main_slots = ["industry", "area", "modality", "seniority", "location"]
+    return {k: v for k, v in state.items() if k in main_slots}
+
 def _build_filters_from_state(state: dict):
     print("\n" + "="*80)
     print("🔧 _BUILD_FILTERS_FROM_STATE - Construyendo filtros")
@@ -293,6 +301,42 @@ class ChatStart(APIView):
         conv.history.append({"role":"system","text": welcome_message})
         conv.save()
         return Response({"conversation_id": conv.id, "message": welcome_message}, status=201)
+
+class ChatState(APIView):
+    """
+    Endpoint GET para obtener el estado actual de una conversación (slots).
+    Útil para sincronizar el frontend con el estado real del backend.
+    """
+    def get(self, request, conversation_id: int):
+        try:
+            conv = Conversation.objects.get(id=conversation_id)
+            print(f"\n📊 CHAT_STATE - Consultando estado de conversación {conversation_id}")
+            print(f"📋 Estado completo en BD: {conv.state}")
+            
+            # Filtrar solo los slots principales para el frontend
+            filtered_state = _get_filtered_state_for_frontend(conv.state)
+            print(f"📤 Estado filtrado para frontend: {filtered_state}")
+            
+            # Contar slots completados
+            main_slots = ["industry", "area", "modality", "seniority", "location"]
+            filled_count = sum(1 for k in main_slots if conv.state.get(k) and conv.state.get(k) not in (None, "", []))
+            
+            response_data = {
+                "conversation_id": conv.id,
+                "state": filtered_state,
+                "filled_count": filled_count,
+                "total_slots": len(main_slots),
+                "progress_percentage": round((filled_count / len(main_slots)) * 100),
+            }
+            
+            print(f"✅ Respuesta enviada: {response_data}")
+            return Response(response_data, status=200)
+        except Conversation.DoesNotExist:
+            print(f"❌ Conversación {conversation_id} no encontrada")
+            return Response({"error": "Conversación no encontrada"}, status=404)
+        except Exception as e:
+            print(f"❌ Error al obtener estado: {e}")
+            return Response({"error": str(e)}, status=500)
 
 class ChatMessage(APIView):
     """
@@ -362,9 +406,17 @@ class ChatMessage(APIView):
                 else:
                     message += q
                 
+                # Filtrar solo los slots principales para el frontend
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
+                print(f"📤 Enviando estado actualizado (unclear): {filtered_state}")
+                
                 conv.history.append({"role":"system","text": message})
                 conv.save()
-                return Response({"type":"unclear", "message": message, "filled": conv.state})
+                return Response({
+                    "type":"unclear", 
+                    "message": message, 
+                    "filled": filtered_state
+                })
         
         # Si el usuario quiere cambiar un slot específico
         if action_intent and action_intent.get("action") == "change_slot":
@@ -400,9 +452,19 @@ class ChatMessage(APIView):
                 conv.save()
                 message = f"¡Por supuesto! 👌 ¿Qué {slot_label} te gustaría tener? Puedes decirme algo como '{question_for(slot_to_change)}'"
             
-            conv.history.append({"role":"system","text": message})
-            conv.save()
-            return Response({"type": "slot_change", "message": message, "slot": slot_to_change})
+                conv.history.append({"role":"system","text": message})
+                conv.save()
+                
+                # Filtrar solo los slots principales para el frontend
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
+                print(f"📤 Enviando estado actualizado (slot_change): {filtered_state}")
+                
+                return Response({
+                    "type": "slot_change", 
+                    "message": message, 
+                    "slot": slot_to_change,
+                    "filled": filtered_state
+                })
         
         # Si el usuario quiere ver empleos ahora
         if action_intent and action_intent.get("action") == "show_jobs":
@@ -423,12 +485,17 @@ class ChatMessage(APIView):
             if pagination_info["has_more"]:
                 message += f"\n\n💡 Si quieres ver más empleos, solo escribe 'más empleos' o 'muéstrame más'. Tengo {pagination_info['total_jobs']} empleos disponibles para ti."
             
+            # Filtrar solo los slots principales para el frontend
+            filtered_state = _get_filtered_state_for_frontend(conv.state)
+            print(f"📤 Enviando estado actualizado (show_jobs): {filtered_state}")
+            
             reply = {
                 "type": "results", 
                 "results": results, 
                 "trace": steps,
                 "pagination_info": pagination_info,
-                "message": message
+                "message": message,
+                "filled": filtered_state
             }
             conv.history.append({"role":"system","text": message})
             conv.save()
@@ -459,6 +526,10 @@ class ChatMessage(APIView):
                 else:
                     message = "¡Aquí tienes más empleos que podrían interesarte: 📋"
                 
+                # Filtrar solo los slots principales para el frontend
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
+                print(f"📤 Enviando estado actualizado (more_results): {filtered_state}")
+                
                 conv.history.append({"role":"system","text": message})
                 conv.save()
                 
@@ -469,13 +540,23 @@ class ChatMessage(APIView):
                     "pagination_info": pagination_info,
                     "current_offset": conv.state["current_offset"],
                     "message": message,
+                    "filled": filtered_state
                 })
             else:
                 # No hay más empleos disponibles
                 message = "Lo siento, no tengo más empleos que mostrarte con esos criterios. ¿Te gustaría que ajuste los filtros o busque en otras categorías? 🔍"
+                
+                # Filtrar solo los slots principales para el frontend
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
+                print(f"📤 Enviando estado actualizado (no_more_results): {filtered_state}")
+                
                 conv.history.append({"role":"system","text": message})
                 conv.save()
-                return Response({"type": "no_more_results", "message": message})
+                return Response({
+                    "type": "no_more_results", 
+                    "message": message,
+                    "filled": filtered_state
+                })
 
         # Si el usuario está seleccionando un empleo específico
         if action_intent and action_intent.get("action") == "select_job":
@@ -489,16 +570,64 @@ class ChatMessage(APIView):
                 job_id = selected_job.get("id")
                 
                 if job_id:
-                    # Construir respuesta con detalles del empleo
-                    job_details_response = f"¡Excelente elección! 🎯 Te muestro todos los detalles del empleo que seleccionaste:\n\n"
-                    job_details_response += f"📋 **{selected_job.get('title', 'Sin título')}**\n"
-                    job_details_response += f"🏢 **Empresa:** {selected_job.get('company', {}).get('name', 'No especificada')}\n"
-                    job_details_response += f"📍 **Ubicación:** {selected_job.get('location', {}).get('raw_text', 'No especificada')}\n"
-                    job_details_response += f"💼 **Área:** {selected_job.get('area', 'No especificada')}\n"
-                    job_details_response += f"🏠 **Modalidad:** {selected_job.get('work_modality', 'No especificada')}\n"
-                    job_details_response += f"💰 **Salario:** {selected_job.get('salary_text', 'No especificado')}\n"
-                    job_details_response += f"🔗 **Ver empleo completo:** {selected_job.get('url', '#')}\n\n"
-                    job_details_response += f"💡 ¿Te interesa este empleo? ¿Quieres que te ayude con algo más?"
+                    # Obtener información completa del empleo desde la BD
+                    try:
+                        job_full = JobPosting.objects.select_related('company', 'location', 'source').prefetch_related('job_benefits__benefit', 'job_tags__tag').get(id=job_id)
+                        
+                        # Obtener beneficios
+                        benefits = [jb.benefit.name for jb in job_full.job_benefits.all()]
+                        
+                        # Obtener tags
+                        accessibility_tags = [jt.tag.name for jt in job_full.job_tags.filter(kind='accessibility')]
+                        transport_tags = [jt.tag.name for jt in job_full.job_tags.filter(kind='transport')]
+                        
+                        # Construir objeto completo con toda la información
+                        full_job_data = {
+                            "id": job_full.id,
+                            "title": job_full.title,
+                            "company": {
+                                "name": job_full.company.name,
+                                "verified": job_full.company.verified,
+                                "rating": float(job_full.company.rating) if job_full.company.rating else None
+                            },
+                            "location": {
+                                "raw_text": job_full.location.raw_text if job_full.location else None
+                            },
+                            "source": {
+                                "name": job_full.source.name,
+                                "url": job_full.url
+                            },
+                            "description": job_full.description,
+                            "work_modality": job_full.work_modality,
+                            "contract_type": job_full.contract_type,
+                            "workday": job_full.workday,
+                            "salary_text": job_full.salary_text,
+                            "area": job_full.area,
+                            "subarea": job_full.subarea,
+                            "min_experience": job_full.min_experience,
+                            "min_education": job_full.min_education,
+                            "published_date": job_full.published_date.isoformat() if job_full.published_date else None,
+                            "accessibility_mentioned": job_full.accessibility_mentioned,
+                            "transport_mentioned": job_full.transport_mentioned,
+                            "disability_friendly": job_full.disability_friendly,
+                            "multiple_vacancies": job_full.multiple_vacancies,
+                            "benefits": benefits,
+                            "accessibility_tags": accessibility_tags,
+                            "transport_tags": transport_tags,
+                            "url": job_full.url,
+                            "created_at": job_full.created_at.isoformat() if job_full.created_at else None,
+                        }
+                    except JobPosting.DoesNotExist:
+                        # Fallback a datos del selected_job si no se encuentra en BD
+                        full_job_data = selected_job
+                        print(f"⚠️ Empleo {job_id} no encontrado en BD, usando datos de resultados")
+                    
+                    # Construir respuesta simple para el chat (se mostrará el modal aparte)
+                    job_details_response = f"¡Excelente elección! 🎯 Aquí tienes todos los detalles del empleo que seleccionaste."
+                    
+                    # Filtrar solo los slots principales para el frontend
+                    filtered_state = _get_filtered_state_for_frontend(conv.state)
+                    print(f"📤 Enviando estado actualizado (job_details): {filtered_state}")
                     
                     conv.history.append({"role":"system","text": job_details_response})
                     conv.save()
@@ -506,16 +635,29 @@ class ChatMessage(APIView):
                         "type": "job_details", 
                         "message": job_details_response,
                         "job_id": job_id,
-                        "job_data": selected_job
+                        "job_data": full_job_data,
+                        "filled": filtered_state
                     })
                 else:
+                    # Filtrar solo los slots principales para el frontend
+                    filtered_state = _get_filtered_state_for_frontend(conv.state)
                     conv.history.append({"role":"system","text": "Lo siento, no pude encontrar los detalles completos de ese empleo. ¿Podrías intentar seleccionar otro?"})
                     conv.save()
-                    return Response({"type": "error", "message": "No se pudieron obtener los detalles del empleo"})
+                    return Response({
+                        "type": "error", 
+                        "message": "No se pudieron obtener los detalles del empleo",
+                        "filled": filtered_state
+                    })
             else:
+                # Filtrar solo los slots principales para el frontend
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
                 conv.history.append({"role":"system","text": "No tengo empleos disponibles para seleccionar. Primero necesito mostrarte algunas opciones. ¿Quieres que busque empleos para ti?"})
                 conv.save()
-                return Response({"type": "error", "message": "No hay empleos disponibles para seleccionar"})
+                return Response({
+                    "type": "error", 
+                    "message": "No hay empleos disponibles para seleccionar",
+                    "filled": filtered_state
+                })
 
         # Si faltan slots, pregunta el siguiente
         nxt = next_missing_slot(conv.state)
@@ -536,9 +678,18 @@ class ChatMessage(APIView):
                 # Mensaje más claro con opciones
                 message += "\n\n💡 **O si prefieres, puedo mostrarte empleos ahora con la información que ya tengo.** Solo di 'muéstrame empleos' o 'buscar' para ver los resultados."
                 
+                # Filtrar solo los slots principales para el frontend
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
+                print(f"📤 Enviando estado actualizado (question con can_show_jobs): {filtered_state}")
+                
                 conv.history.append({"role":"system","text": message})
                 conv.save()
-                return Response({"type":"question", "message": message, "filled": conv.state, "can_show_jobs": True})
+                return Response({
+                    "type":"question", 
+                    "message": message, 
+                    "filled": filtered_state, 
+                    "can_show_jobs": True
+                })
             else:
                 q = question_for(nxt)
                 
@@ -547,9 +698,17 @@ class ChatMessage(APIView):
                 if encouraging_response:
                     message = f"{encouraging_response}\n\n{q}"
                 
+                # Filtrar solo los slots principales para el frontend
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
+                print(f"📤 Enviando estado actualizado (question): {filtered_state}")
+                
                 conv.history.append({"role":"system","text": message})
                 conv.save()
-                return Response({"type":"question", "message": message, "filled": conv.state})
+                return Response({
+                    "type":"question", 
+                    "message": message, 
+                    "filled": filtered_state
+                })
 
         # Si no faltan slots, devuelve recomendaciones
         print("\n✅ Todos los slots completos, generando recomendaciones")
@@ -572,13 +731,17 @@ class ChatMessage(APIView):
         if pagination_info["has_more"]:
             final_message += f"\n\n💡 Si quieres ver más empleos, solo escribe 'más empleos' o 'muéstrame más'. Tengo {pagination_info['total_jobs']} empleos disponibles para ti."
         
+        # Filtrar solo los slots principales para el frontend
+        filtered_state = _get_filtered_state_for_frontend(conv.state)
+        print(f"📤 Enviando estado actualizado (results final): {filtered_state}")
+        
         conv.history.append({"role":"system","text": final_message})
         conv.save()
         return Response({
             "type":"results", 
             "results": results, 
             "trace": steps, 
-            "filled": conv.state,
+            "filled": filtered_state,
             "pagination_info": pagination_info,
             "message": final_message
         })

@@ -30,14 +30,14 @@ SYNONYMS = {
     "finanzas": ["finanzas", "financiero", "contabilidad", "contador", "auditoría", "auditoria"],
     "rrhh": ["recursos humanos", "rrhh", "hr", "talento humano", "selección", "seleccion", "reclutamiento"],
     
-    # Industrias
-    "tecnología": ["tecnología", "tecnologica", "tech", "tecnico", "informática", "software", "it", "sistemas"],
-    "educación": ["educación", "educacion", "educativo", "académico", "universidad", "colegio"],
-    "salud": ["salud", "médico", "hospital", "clínica", "sanitario", "farmacéutico"],
-    "finanzas": ["finanzas", "financiero", "bancario", "contable", "economía", "inversiones"],
-    "retail": ["retail", "comercio", "ventas", "tienda", "comercial"],
-    "manufactura": ["manufactura", "producción", "industrial", "fábrica"],
-    "servicios": ["servicios", "consultoría", "asesoría", "profesional", "gastronomia", "gastronomía", "gastronomica", "restaurante", "chef", "cocina", "turismo", "hotel", "viajes"],
+    # Industrias - Con sinónimos más completos
+    "tecnología": ["tecnología", "tecnologica", "tech", "tecnico", "informática", "informatica", "software", "it", "sistemas", "digital", "tecnológica", "tecnologico"],
+    "educación": ["educación", "educacion", "educativo", "educativa", "académico", "academico", "universidad", "colegio", "enseñanza", "enseñanza", "pedagogía", "pedagogia"],
+    "salud": ["salud", "médico", "medico", "hospital", "clínica", "clinica", "sanitario", "sanitaria", "farmacéutico", "farmaceutico", "medicina", "farmacia"],
+    "finanzas": ["finanzas", "financiero", "financiera", "bancario", "bancaria", "banco", "contable", "contabilidad", "economía", "economia", "inversiones", "banca", "crediticio", "crediticia", "seguros", "aseguradora"],
+    "retail": ["retail", "comercio", "ventas", "tienda", "comercial", "retailer", "supermercado", "bodega", "distribución", "distribucion"],
+    "manufactura": ["manufactura", "producción", "produccion", "industrial", "fábrica", "fabrica", "manufacturero", "manufacturera", "produccionista"],
+    "servicios": ["servicios", "consultoría", "consultoria", "asesoría", "asesoria", "profesional", "gastronomia", "gastronomía", "gastronomica", "restaurante", "chef", "cocina", "turismo", "hotel", "viajes", "hospitalidad"],
 
     # Roles
     "data analyst": ["analista de datos", "data analyst", "analista datos", "analista", "business analyst"],
@@ -112,12 +112,21 @@ def get_modalities_from_db():
         return []
 
 def get_areas_from_db():
-    """Obtiene áreas únicas de la BD"""
+    """Obtiene áreas (industrias) únicas de la BD - campo 'area'"""
     try:
         areas = JobPosting.objects.exclude(area__isnull=True).exclude(area='').values_list('area', flat=True).distinct()
         return [area for area in areas if area]  # Filtrar valores vacíos
     except Exception as e:
-        print(f"Error obteniendo áreas: {e}")
+        print(f"Error obteniendo áreas (industrias): {e}")
+        return []
+
+def get_subareas_from_db():
+    """Obtiene subáreas (áreas funcionales) únicas de la BD - campo 'subarea'"""
+    try:
+        subareas = JobPosting.objects.exclude(subarea__isnull=True).exclude(subarea='').values_list('subarea', flat=True).distinct()
+        return [subarea for subarea in subareas if subarea]  # Filtrar valores vacíos
+    except Exception as e:
+        print(f"Error obteniendo subáreas (áreas funcionales): {e}")
         return []
 
 def get_seniorities_from_db():
@@ -175,8 +184,12 @@ def get_current_seniorities():
     return get_seniorities_from_db()
 
 def get_current_areas():
-    """Obtiene las áreas actuales de la BD"""
-    return get_areas_from_db()
+    """Obtiene las áreas funcionales (subáreas) actuales de la BD
+    
+    IMPORTANTE: En el frontend, "área funcional" corresponde al campo 'subarea' en la BD,
+    no al campo 'area' (que es para industrias).
+    """
+    return get_subareas_from_db()
 
 def get_current_locations():
     """Obtiene las ubicaciones actuales de la BD"""
@@ -190,11 +203,12 @@ def generate_dynamic_synonyms():
     """
     Genera sinónimos dinámicos basados en los datos reales de la BD.
     Esto permite que el sistema aprenda de los datos existentes.
+    IMPORTANTE: Agrega sinónimos sin eliminar los existentes.
     """
     dynamic_synonyms = {}
     
     try:
-        # Obtener datos actuales
+        # Obtener datos actuales de la BD
         industries = get_current_industries()
         modalities = get_current_modalities()
         seniorities = get_current_seniorities()
@@ -202,68 +216,171 @@ def generate_dynamic_synonyms():
         locations = get_current_locations()
         roles = get_current_roles()
         
-        # Generar sinónimos para modalidades
+        # 1. AGREGAR TODAS LAS ÁREAS REALES COMO SINÓNIMOS
+        for area in areas:
+            if area and area not in ['', None]:
+                area_lower = _norm(area)
+                # Agregar el nombre completo de la área como sinónimo de sí misma
+                if 'datos' in area_lower or 'data' in area_lower or 'desarrollo' in area_lower:
+                    dynamic_synonyms.setdefault('datos', []).append(area_lower)
+                    dynamic_synonyms.setdefault('desarrollo', []).append(area_lower)
+                    # También agregar palabras individuales
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('datos', []).append(word)
+                            dynamic_synonyms.setdefault('desarrollo', []).append(word)
+                elif 'diseño' in area_lower or 'dise' in area_lower:
+                    dynamic_synonyms.setdefault('diseño', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('diseño', []).append(word)
+                elif 'finanzas' in area_lower or 'contabilidad' in area_lower:
+                    dynamic_synonyms.setdefault('finanzas', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('finanzas', []).append(word)
+                elif 'rrhh' in area_lower or 'recursos humanos' in area_lower or 'humanos' in area_lower:
+                    dynamic_synonyms.setdefault('rrhh', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('rrhh', []).append(word)
+                elif 'salud' in area_lower or 'médico' in area_lower or 'medico' in area_lower:
+                    dynamic_synonyms.setdefault('salud', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('salud', []).append(word)
+                elif 'construcción' in area_lower or 'construccion' in area_lower:
+                    dynamic_synonyms.setdefault('construcción', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('construcción', []).append(word)
+                elif 'transporte' in area_lower:
+                    dynamic_synonyms.setdefault('transporte', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('transporte', []).append(word)
+                elif 'turismo' in area_lower:
+                    dynamic_synonyms.setdefault('turismo', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('turismo', []).append(word)
+                elif 'gastronomía' in area_lower or 'gastronomia' in area_lower or 'cocina' in area_lower:
+                    dynamic_synonyms.setdefault('gastronomía', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('gastronomía', []).append(word)
+                elif 'cultura' in area_lower:
+                    dynamic_synonyms.setdefault('cultura', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('cultura', []).append(word)
+                elif 'tecnología' in area_lower or 'tecnologia' in area_lower or 'tecnologica' in area_lower:
+                    dynamic_synonyms.setdefault('tecnología', []).append(area_lower)
+                    for word in area_lower.split():
+                        if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                            dynamic_synonyms.setdefault('tecnología', []).append(word)
+        
+        # 2. AGREGAR SUBAREAS COMO SINÓNIMOS DE ÁREAS
+        subareas = JobPosting.objects.exclude(subarea__isnull=True).exclude(subarea='').values_list('subarea', flat=True).distinct()
+        subarea_to_area_map = {
+            'datos': ['sistemas', 'desarrollo', 'software', 'programación', 'programacion'],
+            'diseño': ['diseño gráfico', 'diseño web', 'gráfico', 'web'],
+            'finanzas': ['contabilidad', 'tesorería', 'tesoreria', 'finanzas'],
+            'salud': ['atención pacientes', 'atención salud', 'atencion'],
+            'gastronomía': ['cocina', 'atención', 'recepción', 'recepcion'],
+            'cultura': ['biblioteca', 'museos', 'biblioteca y museos'],
+            'construcción': ['oficios', 'mantención', 'mantencion'],
+            'transporte': ['conducción', 'reparto', 'conduccion'],
+            'rrhh': ['gestión personas', 'gestión de personas', 'gestion'],
+            'turismo': ['recepción', 'guía', 'recepcion', 'guia'],
+        }
+        
+        for subarea in subareas:
+            if subarea:
+                subarea_lower = _norm(subarea)
+                # Mapear subarea a área según palabras clave
+                for area_key, keywords in subarea_to_area_map.items():
+                    if any(keyword in subarea_lower for keyword in keywords):
+                        dynamic_synonyms.setdefault(area_key, []).append(subarea_lower)
+                        # Agregar palabras individuales
+                        for word in subarea_lower.split():
+                            if word not in ['de', 'y', 'la', 'el', 'los', 'las']:
+                                dynamic_synonyms.setdefault(area_key, []).append(word)
+                        break
+        
+        # 3. GENERAR SINÓNIMOS PARA MODALIDADES
         for modality in modalities:
             if modality:
-                modality_lower = modality.lower()
+                modality_lower = _norm(modality)
                 if 'remoto' in modality_lower or 'teletrabajo' in modality_lower:
-                    dynamic_synonyms.setdefault('remoto', []).extend(['remoto', 'teletrabajo', 'desde casa', 'home office'])
+                    dynamic_synonyms.setdefault('remoto', []).extend([modality_lower, 'remoto', 'teletrabajo', 'desde casa', 'home office', 'telemarketing'])
                 elif 'híbrido' in modality_lower or 'hibrido' in modality_lower:
-                    dynamic_synonyms.setdefault('híbrido', []).extend(['híbrido', 'hibrido', 'mixto', 'combinado'])
+                    dynamic_synonyms.setdefault('híbrido', []).extend([modality_lower, 'híbrido', 'hibrido', 'mixto', 'combinado'])
                 elif 'presencial' in modality_lower:
-                    dynamic_synonyms.setdefault('presencial', []).extend(['presencial', 'en oficina', 'oficina'])
+                    dynamic_synonyms.setdefault('presencial', []).extend([modality_lower, 'presencial', 'en oficina', 'oficina', 'físico', 'fisico'])
         
-        # Generar sinónimos para seniorities
+        # 4. GENERAR SINÓNIMOS PARA SENIORITIES (experiencias)
         for seniority in seniorities:
             if seniority:
-                seniority_lower = seniority.lower()
-                if 'junior' in seniority_lower:
-                    dynamic_synonyms.setdefault('junior', []).extend(['junior', 'jr', 'entry', 'trainee', 'principiante'])
-                elif 'semi' in seniority_lower:
-                    dynamic_synonyms.setdefault('semi', []).extend(['semi', 'ssr', 'semi-senior', 'intermedio'])
-                elif 'senior' in seniority_lower:
-                    dynamic_synonyms.setdefault('senior', []).extend(['senior', 'sr', 'experto', 'avanzado'])
+                seniority_lower = _norm(str(seniority))
+                if 'junior' in seniority_lower or 'principiante' in seniority_lower or seniority_lower in ['0', '0 años', '1', '1 años']:
+                    dynamic_synonyms.setdefault('junior', []).extend([seniority_lower, 'junior', 'jr', 'entry', 'trainee', 'principiante'])
+                elif 'semi' in seniority_lower or 'intermedio' in seniority_lower or seniority_lower in ['2', '2 años', '3', '3 años']:
+                    dynamic_synonyms.setdefault('semi', []).extend([seniority_lower, 'semi', 'ssr', 'semi-senior', 'intermedio'])
+                elif 'senior' in seniority_lower or 'experto' in seniority_lower or seniority_lower in ['4 años', '5 años', '11 años']:
+                    dynamic_synonyms.setdefault('senior', []).extend([seniority_lower, 'senior', 'sr', 'experto', 'avanzado'])
         
-        # Generar sinónimos para áreas
-        for area in areas:
-            if area:
-                area_lower = area.lower()
-                if 'datos' in area_lower or 'data' in area_lower:
-                    dynamic_synonyms.setdefault('datos', []).extend(['datos', 'data', 'analítica', 'analytics'])
-                elif 'desarrollo' in area_lower or 'dev' in area_lower:
-                    dynamic_synonyms.setdefault('desarrollo', []).extend(['desarrollo', 'dev', 'programación', 'software'])
-                elif 'diseño' in area_lower or 'design' in area_lower:
-                    dynamic_synonyms.setdefault('diseño', []).extend(['diseño', 'ux', 'ui', 'diseñador'])
-                elif 'calidad' in area_lower or 'qa' in area_lower:
-                    dynamic_synonyms.setdefault('calidad', []).extend(['calidad', 'qa', 'testing', 'pruebas'])
-                elif 'gastronomía' in area_lower or 'gastronomia' in area_lower:
-                    dynamic_synonyms.setdefault('gastronomía', []).extend(['gastronomía', 'cocina', 'chef', 'restaurante'])
-                elif 'cultura' in area_lower:
-                    dynamic_synonyms.setdefault('cultura', []).extend(['cultura', 'biblioteca', 'museo', 'artes'])
-                elif 'salud' in area_lower:
-                    dynamic_synonyms.setdefault('salud', []).extend(['salud', 'médico', 'hospital', 'clínica'])
-                elif 'construcción' in area_lower or 'construccion' in area_lower:
-                    dynamic_synonyms.setdefault('construcción', []).extend(['construcción', 'obra', 'arquitectura'])
-                elif 'transporte' in area_lower:
-                    dynamic_synonyms.setdefault('transporte', []).extend(['transporte', 'logística', 'logistica'])
-                elif 'turismo' in area_lower:
-                    dynamic_synonyms.setdefault('turismo', []).extend(['turismo', 'hotelería', 'hoteleria', 'viajes'])
-                elif 'finanzas' in area_lower:
-                    dynamic_synonyms.setdefault('finanzas', []).extend(['finanzas', 'contabilidad', 'contador'])
-                elif 'recursos humanos' in area_lower or 'rrhh' in area_lower:
-                    dynamic_synonyms.setdefault('rrhh', []).extend(['recursos humanos', 'rrhh', 'hr', 'reclutamiento'])
-        
-        # Generar sinónimos para industrias basados en empresas
+        # 5. GENERAR SINÓNIMOS PARA INDUSTRIAS BASADOS EN EMPRESAS Y TÍTULOS
         companies = JobPosting.objects.values_list('company__name', flat=True).distinct()
-        for company in companies:
+        titles = JobPosting.objects.values_list('title', flat=True).distinct()[:200]  # Limitar para performance
+        
+        industry_keywords = {
+            'tecnología': ['tech', 'software', 'informática', 'informatica', 'sistemas', 'digital', 'it', 'sap', 'salesforce', 'desarrollador', 'programador', 'analista bi', 'arquitecto', 'pm'],
+            'finanzas': ['finanzas', 'financiero', 'contabilidad', 'tesorería', 'tesoreria', 'impuestos', 'contable', 'banco', 'bancario', 'seguros', 'auditoría', 'auditoria'],
+            'salud': ['salud', 'médico', 'medico', 'hospital', 'clínica', 'clinica', 'farmacia', 'farmacéutico', 'farmaceutico', 'atención salud'],
+            'educación': ['educación', 'educacion', 'universidad', 'colegio', 'académico', 'academico', 'enseñanza', 'pedagogía', 'pedagogia'],
+            'retail': ['retail', 'ventas', 'comercio', 'tienda', 'supermercado', 'bodega'],
+            'manufactura': ['manufactura', 'producción', 'produccion', 'industrial', 'fábrica', 'fabrica', 'ingeniería', 'ingenieria'],
+            'servicios': ['servicios', 'consultoría', 'consultoria', 'asesoría', 'asesoria'],
+        }
+        
+        # Analizar empresas
+        for company in companies[:100]:  # Limitar para performance
             if company:
-                company_lower = company.lower()
-                if any(word in company_lower for word in ['tech', 'software', 'informática']):
-                    dynamic_synonyms.setdefault('tecnología', []).extend(['tecnología', 'tech', 'informática', 'software'])
-                elif any(word in company_lower for word in ['educación', 'universidad', 'colegio']):
-                    dynamic_synonyms.setdefault('educación', []).extend(['educación', 'educativo', 'académico'])
-                elif any(word in company_lower for word in ['salud', 'médico', 'hospital']):
-                    dynamic_synonyms.setdefault('salud', []).extend(['salud', 'médico', 'hospital', 'clínica'])
+                company_lower = _norm(company)
+                for industry, keywords in industry_keywords.items():
+                    if any(keyword in company_lower for keyword in keywords):
+                        dynamic_synonyms.setdefault(industry, []).append(company_lower)
+                        # Agregar palabras clave de la empresa (filtrar palabras irrelevantes)
+                        words_to_exclude = ['spa', 'sa', 'ltda', 'sociedad', 'empresa', 'limitada', 'anónima', 'anonima', 
+                                          's.a.', 's.a', 'importante', 'sector', 'del', 'servicios', 'industrial', 
+                                          'industriales', 'norte', 'sur', 'chile', 'latam', 'group', 'grupo']
+                        for word in company_lower.split():
+                            word_clean = word.strip('.,;:()[]{}')
+                            if len(word_clean) > 3 and word_clean not in words_to_exclude:
+                                # Solo agregar si es relevante para la industria
+                                if industry == 'finanzas' and any(kw in word_clean for kw in ['financiero', 'banco', 'seguro', 'contable']):
+                                    dynamic_synonyms.setdefault(industry, []).append(word_clean)
+                                elif industry == 'tecnología' and any(kw in word_clean for kw in ['tech', 'informatic', 'software', 'sistemas', 'digital', 'solucion']):
+                                    dynamic_synonyms.setdefault(industry, []).append(word_clean)
+                                elif industry == 'salud' and any(kw in word_clean for kw in ['salud', 'medic', 'hospital', 'clinica', 'farmacia']):
+                                    dynamic_synonyms.setdefault(industry, []).append(word_clean)
+                        break
+        
+        # Analizar títulos
+        for title in titles:
+            if title:
+                title_lower = _norm(title)
+                for industry, keywords in industry_keywords.items():
+                    if any(keyword in title_lower for keyword in keywords):
+                        # Agregar palabras clave relevantes del título
+                        title_words = title_lower.split()
+                        for word in title_words:
+                            if len(word) > 3 and word not in ['para', 'con', 'desde', 'hasta', 'jornada', 'horas', 'remoto', 'presencial', 'híbrido']:
+                                if industry == 'tecnología' and any(kw in word for kw in ['desarrollador', 'programador', 'analista', 'arquitecto', 'ingeniero']):
+                                    dynamic_synonyms.setdefault(industry, []).append(word)
+                                elif industry == 'finanzas' and any(kw in word for kw in ['contable', 'tesorería', 'finanzas', 'impuestos', 'auditor']):
+                                    dynamic_synonyms.setdefault(industry, []).append(word)
         
         # Limpiar duplicados
         for key in dynamic_synonyms:
@@ -271,6 +388,8 @@ def generate_dynamic_synonyms():
             
     except Exception as e:
         print(f"Error generando sinónimos dinámicos: {e}")
+        import traceback
+        traceback.print_exc()
     
     return dynamic_synonyms
 
@@ -413,11 +532,27 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
         print(f"✅ Modalidad (fuzzy): {modality_matches}")
         include.setdefault("modality", []).extend(modality_matches)
     
+    # Detectar patrones específicos de modalidad: "trabajo X", "modalidad X", "tipo X"
+    modality_patterns = [
+        (r"(trabajo|modalidad|tipo\s+de\s+trabajo)\s+(remoto|desde\s+casa|teletrabajo|home\s+office)", "remoto"),
+        (r"(trabajo|modalidad|tipo\s+de\s+trabajo)\s+(h[ií]brido|hibrido|mixto|combinado)", "híbrido"),
+        (r"(trabajo|modalidad|tipo\s+de\s+trabajo)\s+(presencial|en\s+oficina|f[ií]sico)", "presencial"),
+    ]
+    
+    for pattern, canon in modality_patterns:
+        if re.search(pattern, raw):
+            modality_canon = {"remoto":"Remoto","híbrido":"Híbrido","presencial":"Presencial"}[canon]
+            if modality_canon not in include.get("modality", []):
+                print(f"✅ Modalidad (patrón '{pattern}'→'{modality_canon}')")
+                include.setdefault("modality", []).append(modality_canon)
+                break
+    
     for syn, canon in current_inv_synonyms.items():
         if _is_whole_word(raw, syn) and canon in ["remoto","híbrido","presencial"]:
             modality_canon = {"remoto":"Remoto","híbrido":"Híbrido","presencial":"Presencial"}[canon]
-            print(f"✅ Modalidad (sinónimo '{syn}'→'{canon}'→'{modality_canon}')")
-            include.setdefault("modality", []).append(modality_canon)
+            if modality_canon not in include.get("modality", []):
+                print(f"✅ Modalidad (sinónimo '{syn}'→'{canon}'→'{modality_canon}')")
+                include.setdefault("modality", []).append(modality_canon)
 
     # Seniority - usando fuzzy matching con datos de BD
     seniority_matches = _fuzzy_match(raw, current_seniorities, threshold=0.6)
@@ -425,11 +560,27 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
         print(f"✅ Seniority (fuzzy): {seniority_matches}")
         include.setdefault("seniority", []).extend(seniority_matches)
     
+    # Detectar patrones específicos de seniority: "nivel X", "experiencia X", "perfil X"
+    seniority_patterns = [
+        (r"(nivel|experiencia|perfil|seniority)\s+(junior|jr|entry|trainee|principiante)", "junior"),
+        (r"(nivel|experiencia|perfil|seniority)\s+(semi|ssr|semi-senior|semisenior|intermedio)", "semi"),
+        (r"(nivel|experiencia|perfil|seniority)\s+(senior|sr|experto|avanzado)", "senior"),
+    ]
+    
+    for pattern, canon in seniority_patterns:
+        if re.search(pattern, raw):
+            seniority_canon = canon.capitalize()
+            if seniority_canon not in include.get("seniority", []):
+                print(f"✅ Seniority (patrón '{pattern}'→'{seniority_canon}')")
+                include.setdefault("seniority", []).append(seniority_canon)
+                break
+    
     for syn, canon in current_inv_synonyms.items():
         if _is_whole_word(raw, syn) and canon in ["junior","semi","senior"]:
             seniority_canon = canon.capitalize()
-            print(f"✅ Seniority (sinónimo '{syn}'→'{canon}'→'{seniority_canon}')")
-            include.setdefault("seniority", []).append(seniority_canon)
+            if seniority_canon not in include.get("seniority", []):
+                print(f"✅ Seniority (sinónimo '{syn}'→'{canon}'→'{seniority_canon}')")
+                include.setdefault("seniority", []).append(seniority_canon)
 
     # Industria - usando fuzzy matching con datos de BD
     industry_matches = _fuzzy_match(raw, current_industries, threshold=0.5)
@@ -449,38 +600,216 @@ def parse_prompt(prompt: str, roles_from_db: List[str] = None) -> Tuple[dict, di
                 industry_canon = industry_mapping[canon]
                 print(f"✅ Industria (sinónimo '{syn}'→'{canon}'→'{industry_canon}')")
                 include.setdefault("industry", []).append(industry_canon)
+    
+    # Detectar patrones específicos de industria: "industria X", "sector X", "trabajo de la industria X"
+    industry_patterns = [
+        (r"industria\s+(tecnol[oó]gica|tech|inform[aá]tica|digital)", "tecnología"),
+        (r"industria\s+(educativa|educacional|de\s+educaci[oó]n)", "educación"),
+        (r"industria\s+(de\s+)?salud|sector\s+salud|industria\s+m[eé]dica", "salud"),
+        (r"industria\s+(financiera|bancaria|de\s+finanzas|del\s+sector\s+financiero)", "finanzas"),
+        (r"industria\s+(financiero|bancario|finanzas)", "finanzas"),  # Variante sin género
+        (r"trabajo\s+de\s+(la\s+)?industria\s+(financiera|bancaria|finanzas)", "finanzas"),
+        (r"sector\s+(financiero|bancario|finanzas)", "finanzas"),
+        (r"industria\s+(comercial|retail|de\s+ventas)", "retail"),
+        (r"industria\s+(manufacturera|industrial|de\s+producci[oó]n)", "manufactura"),
+        (r"industria\s+de\s+servicios|sector\s+servicios", "servicios"),
+    ]
+    
+    for pattern, canon in industry_patterns:
+        if re.search(pattern, raw):
+            industry_mapping = {
+                "tecnología": "Tecnología", "educación": "Educación", 
+                "salud": "Salud", "finanzas": "Finanzas",
+                "retail": "Retail", "manufactura": "Manufactura", "servicios": "Servicios"
+            }
+            if canon in industry_mapping:
+                industry_canon = industry_mapping[canon]
+                if industry_canon not in include.get("industry", []):
+                    print(f"✅ Industria (patrón '{pattern}'→'{industry_canon}')")
+                    include.setdefault("industry", []).append(industry_canon)
+                break  # Solo tomar el primer match
 
-    # Área - usando fuzzy matching con datos de BD
+    # Área - PRIMERO buscar coincidencia exacta o muy cercana en BD antes de usar mapeo estático
     area_matches = _fuzzy_match(raw, current_areas, threshold=0.6)
-    if area_matches:
-        print(f"✅ Área (fuzzy): {area_matches}")
-        include.setdefault("area", []).extend(area_matches)
+    exact_area_matches = []
+    partial_area_matches = []
+    
+    # Buscar coincidencias exactas primero (sin mapeo)
+    raw_lower = raw.lower()
+    raw_has_datos = 'datos' in raw_lower or 'data' in raw_lower
+    
+    for area in current_areas:
+        area_lower = _norm(area).lower()
+        area_has_datos = 'datos' in area_lower or 'data' in area_lower
+        
+        # Coincidencia exacta (ignorar mayúsculas)
+        if raw_lower == area_lower:
+            exact_area_matches.append(area)
+        # Si el área contiene "datos" pero el usuario no lo mencionó, NO considerarlo exacto
+        elif area_has_datos and not raw_has_datos:
+            # No incluir áreas con "datos" si el usuario solo dijo "desarrollo"
+            continue
+        # Si el usuario mencionó "datos", incluir áreas que lo contengan
+        elif raw_has_datos and area_has_datos:
+            if _is_whole_word(area_lower, raw_lower.replace('datos', '').replace('data', '').strip()):
+                exact_area_matches.append(area)
+        # Para otras coincidencias de palabra completa
+        elif _is_whole_word(area_lower, raw_lower) and not area_has_datos:
+            exact_area_matches.append(area)
+    
+    # Si encontramos coincidencias exactas, usarlas
+    if exact_area_matches:
+        # Filtrar para evitar duplicados y preferir áreas sin "datos" si el usuario no lo mencionó
+        filtered_matches = []
+        if not raw_has_datos:
+            # Priorizar áreas sin "datos"
+            solo_desarrollo = [a for a in exact_area_matches if 'datos' not in _norm(a).lower()]
+            if solo_desarrollo:
+                filtered_matches = solo_desarrollo
+            else:
+                filtered_matches = exact_area_matches
+        else:
+            filtered_matches = exact_area_matches
+        
+        print(f"✅ Área (coincidencia exacta filtrada): {filtered_matches}")
+        include.setdefault("area", []).extend(filtered_matches)
+    elif area_matches:
+        # Filtrar matches para evitar "Desarrollo / datos" cuando el usuario dice solo "desarrollo"
+        for match in area_matches:
+            match_lower = _norm(match).lower()
+            match_has_datos = 'datos' in match_lower or 'data' in match_lower
+            
+            # Si el usuario NO mencionó "datos" pero el match lo contiene, NO incluirlo
+            if not raw_has_datos and match_has_datos:
+                # NO incluir áreas con "datos" si el usuario no lo mencionó
+                print(f"   ⏭️  Saltando '{match}' porque contiene 'datos' pero el usuario no lo mencionó")
+                continue
+            
+            # Si el usuario mencionó "datos", incluir matches que lo contengan
+            if raw_has_datos and match_has_datos:
+                partial_area_matches.append(match)
+            # Si el match no contiene "datos", incluirlo
+            elif not match_has_datos:
+                partial_area_matches.append(match)
+        
+        if partial_area_matches:
+            print(f"✅ Área funcional (fuzzy filtrado): {partial_area_matches}")
+            include.setdefault("area", []).extend(partial_area_matches)
+        elif area_matches:
+            # Si todos fueron filtrados, usar los matches pero advertir
+            print(f"⚠️  Área funcional (todos los matches filtrados, usando todos): {area_matches}")
+            include.setdefault("area", []).extend(area_matches)
+    
+    # Detectar patrones específicos de área: "área X", "trabajo en X", "funcional X"
+    area_patterns = [
+        (r"área\s+(funcional\s+)?(datos|data|anal[ií]tica)", "datos", True),  # Solo datos, no desarrollo
+        (r"área\s+(funcional\s+)?desarrollo", "desarrollo", False),  # Solo desarrollo
+        (r"trabajo\s+en\s+(datos|data|anal[ií]tica)", "datos", True),
+        (r"trabajo\s+en\s+desarrollo", "desarrollo", False),
+        (r"área\s+(funcional\s+)?(dise[ñn]o|ux|ui)", "diseño", False),
+        (r"trabajo\s+en\s+(dise[ñn]o|ux|ui)", "diseño", False),
+        (r"área\s+(funcional\s+)?(calidad|qa|testing|pruebas)", "calidad", False),
+        (r"área\s+(funcional\s+)?(finanzas|financiero|contabilidad)", "finanzas", False),
+        (r"área\s+(funcional\s+)?(recursos\s+humanos|rrhh|hr)", "rrhh", False),
+    ]
+    
+    # Mapeo mejorado: separar desarrollo de datos
+    area_mapping_exact = {
+        "datos": ["Desarrollo / datos"],  # Solo si dice específicamente "datos"
+        "desarrollo": [],  # Para desarrollo, buscar en BD primero
+        "diseño": ["Diseño"],
+        "calidad": ["Servicios Generales"],
+        "finanzas": ["Finanzas"],
+        "rrhh": ["Recursos Humanos"],
+    }
+    
+    for pattern, canon, is_data_specific in area_patterns:
+        if re.search(pattern, raw):
+            if canon == "desarrollo":
+                # Para desarrollo, buscar áreas que contengan "desarrollo" pero no necesariamente "datos"
+                dev_areas = [a for a in current_areas if 'desarrollo' in _norm(a).lower()]
+                solo_desarrollo = [a for a in dev_areas if 'datos' not in _norm(a).lower()]
+                
+                if solo_desarrollo:
+                    # Si hay un área que es solo "desarrollo" (sin "datos"), usar esa
+                    for area in solo_desarrollo:
+                        if area not in include.get("area", []):
+                            print(f"✅ Área (patrón desarrollo→'{area}')")
+                            include.setdefault("area", []).append(area)
+                    break
+                elif dev_areas and not raw_has_datos:
+                    # Si solo hay áreas con "datos" pero el usuario no mencionó "datos", 
+                    # priorizar áreas que contengan "desarrollo" pero no "datos"
+                    # Si no hay ninguna, NO agregar nada aquí (se maneja arriba con fuzzy matching)
+                    solo_dev = [a for a in dev_areas if 'datos' not in _norm(a).lower()]
+                    if solo_dev:
+                        for area in solo_dev:
+                            if area not in include.get("area", []):
+                                print(f"✅ Área funcional (patrón desarrollo→'{area}')")
+                                include.setdefault("area", []).append(area)
+                    # Si no hay áreas sin "datos", no agregar nada (dejar que fuzzy matching lo maneje)
+                    break
+                elif dev_areas:
+                    # Si el usuario mencionó "datos" o no hay otra opción, usar "Desarrollo / datos"
+                    for area in dev_areas:
+                        if area not in include.get("area", []):
+                            print(f"✅ Área (patrón desarrollo→'{area}')")
+                            include.setdefault("area", []).append(area)
+                    break
+            elif canon in area_mapping_exact:
+                areas_to_add = area_mapping_exact[canon]
+                for area_canon in areas_to_add:
+                    if area_canon not in include.get("area", []):
+                        print(f"✅ Área (patrón '{pattern}'→'{area_canon}')")
+                        include.setdefault("area", []).append(area_canon)
+                break
     
     # Mapping de sinónimos canónicos a nombres reales de áreas en la BD
+    # IMPORTANTE: Separar desarrollo de datos
     area_mapping = {
-        "datos": "Desarrollo / datos",
-        "desarrollo": "Desarrollo / datos",
-        "infraestructura": "Tecnología",
-        "calidad": "Servicios Generales",
-        "soporte": "Servicios Generales",
-        "diseño": "Diseño",
-        "gastronomía": "Gastronomía",
-        "cultura": "Cultura",
-        "salud": "Salud",
-        "construcción": "Construcción",
-        "transporte": "Transporte",
-        "turismo": "Turismo",
-        "finanzas": "Finanzas",
-        "rrhh": "Recursos Humanos",
-        "tecnología": "Tecnología",
+        "datos": ["Desarrollo / datos"],  # Solo si dice específicamente "datos"
+        "desarrollo": [],  # Se maneja arriba buscando en BD
+        "infraestructura": ["Tecnología"],
+        "calidad": ["Servicios Generales"],
+        "soporte": ["Servicios Generales"],
+        "diseño": ["Diseño"],
+        "gastronomía": ["Gastronomía"],
+        "cultura": ["Cultura"],
+        "salud": ["Salud"],
+        "construcción": ["Construcción"],
+        "transporte": ["Transporte"],
+        "turismo": ["Turismo"],
+        "finanzas": ["Finanzas"],
+        "rrhh": ["Recursos Humanos"],
+        "tecnología": ["Tecnología"],
     }
     
     for syn, canon in current_inv_synonyms.items():
-        if _is_whole_word(raw, syn) and canon in ["datos","desarrollo","infraestructura","calidad","soporte","diseño","gastronomía","cultura","salud","construcción","transporte","turismo","finanzas","rrhh"]:
-            if canon in area_mapping:
-                area_canon = area_mapping[canon]
-                print(f"✅ Área (sinónimo '{syn}'→'{canon}'→'{area_canon}')")
-                include.setdefault("area", []).append(area_canon)
+        if _is_whole_word(raw, syn) and canon in area_mapping:
+            # Para desarrollo, buscar en BD (subáreas/áreas funcionales) en lugar de usar mapeo estático
+            if canon == "desarrollo" and canon not in [p[1] for p in area_patterns if re.search(p[0], raw)]:
+                # Buscar en subáreas (áreas funcionales) que contengan "desarrollo"
+                dev_areas = [a for a in current_areas if 'desarrollo' in _norm(a).lower()]
+                if dev_areas:
+                    # Si el usuario no mencionó "datos", priorizar áreas sin "datos"
+                    if not raw_has_datos:
+                        solo_desarrollo = [a for a in dev_areas if 'datos' not in _norm(a).lower()]
+                        if solo_desarrollo:
+                            dev_areas = solo_desarrollo
+                        else:
+                            # Si no hay áreas sin "datos", NO agregar nada
+                            print(f"   ⏭️  Saltando sinónimo 'desarrollo'→'Desarrollo / datos' porque el usuario no mencionó 'datos' y no hay otras opciones")
+                            continue
+                    
+                    for area in dev_areas:
+                        if area not in include.get("area", []):
+                            print(f"✅ Área funcional (sinónimo desarrollo→'{area}')")
+                            include.setdefault("area", []).append(area)
+            elif area_mapping[canon]:
+                for area_canon in area_mapping[canon]:
+                    if area_canon not in include.get("area", []):
+                        print(f"✅ Área (sinónimo '{syn}'→'{canon}'→'{area_canon}')")
+                        include.setdefault("area", []).append(area_canon)
 
     # Role (con sinónimos + fuzzy matching)
     role_hits = []
@@ -892,12 +1221,45 @@ def parse_simple_response(text: str, context: str = None) -> dict:
     
     # Si el contexto es industria
     if context == "industry":
+        # Detectar patrones como "industria X", "sector X", "trabajo de la industria X"
+        industry_patterns = [
+            (r"industria\s+(tecnol[oó]gica|tech|inform[aá]tica|digital)", "tecnología"),
+            (r"industria\s+(educativa|educacional|de\s+educaci[oó]n)", "educación"),
+            (r"industria\s+(de\s+)?salud|sector\s+salud|industria\s+m[eé]dica", "salud"),
+            (r"industria\s+(financiera|bancaria|de\s+finanzas|del\s+sector\s+financiero)", "finanzas"),
+            (r"industria\s+(financiero|bancario|finanzas)", "finanzas"),
+            (r"trabajo\s+de\s+(la\s+)?industria\s+(financiera|bancaria|finanzas)", "finanzas"),
+            (r"sector\s+(financiero|bancario|finanzas)", "finanzas"),
+            (r"industria\s+(comercial|retail|de\s+ventas)", "retail"),
+            (r"industria\s+(manufacturera|industrial|de\s+producci[oó]n)", "manufactura"),
+            (r"industria\s+de\s+servicios|sector\s+servicios", "servicios"),
+        ]
+        
+        for pattern, canon in industry_patterns:
+            if re.search(pattern, raw):
+                industry_mapping = {
+                    "tecnología": "Tecnología", "educación": "Educación", 
+                    "salud": "Salud", "finanzas": "Finanzas",
+                    "retail": "Retail", "manufactura": "Manufactura", "servicios": "Servicios"
+                }
+                if canon in industry_mapping:
+                    result["industry"] = industry_mapping[canon]
+                    return result  # Retornar inmediatamente si encontramos un patrón
+        
         # Si el usuario escribió algo como "industria X", extraer X
         raw_words = raw.split()
         if len(raw_words) > 1 and "industria" in raw_words:
-            # Remover la palabra "industria" y trabajar con el resto
-            text_to_match = " ".join([w for w in raw_words if w != "industria"])
+            # Remover palabras como "industria", "de", "la", "del" y trabajar con el resto
+            words_to_remove = ["industria", "de", "la", "del", "las", "los", "el", "un", "una"]
+            text_to_match = " ".join([w for w in raw_words if w not in words_to_remove])
             raw = text_to_match
+        
+        # También extraer después de "sector"
+        if "sector" in raw_words:
+            words_to_remove = ["sector", "de", "la", "del", "las", "los", "el", "un", "una"]
+            text_to_match = " ".join([w for w in raw_words if w not in words_to_remove])
+            if text_to_match:
+                raw = text_to_match
         
         # Primero intentar con sinónimos
         for syn, canon in current_inv_synonyms.items():
@@ -948,35 +1310,93 @@ def parse_simple_response(text: str, context: str = None) -> dict:
     
     # Si el contexto es área
     elif context == "area":
-        # Primero intentar con sinónimos
-        area_mapping = {
-            "datos": "Desarrollo / datos",
-            "desarrollo": "Desarrollo / datos",
-            "infraestructura": "Tecnología",
-            "calidad": "Servicios Generales",
-            "soporte": "Servicios Generales",
-            "diseño": "Diseño",
-            "gastronomía": "Gastronomía",
-            "cultura": "Cultura",
-            "salud": "Salud",
-            "construcción": "Construcción",
-            "transporte": "Transporte",
-            "turismo": "Turismo",
-            "finanzas": "Finanzas",
-            "rrhh": "Recursos Humanos",
-            "tecnología": "Tecnología",
-        }
+        # Extraer solo la palabra clave si hay preposiciones
+        raw_words = raw.split()
+        words_to_remove = ["área", "de", "la", "el", "del", "las", "los", "funcional", "me", "gusta", "mas", "más"]
+        keywords = [w for w in raw_words if w not in words_to_remove]
+        raw_clean = " ".join(keywords) if keywords else raw
         
-        for syn, canon in current_inv_synonyms.items():
-            if _is_whole_word(raw, syn) and canon in area_mapping:
-                result["area"] = area_mapping[canon]
-                break
+        # PRIMERO: Buscar coincidencia exacta en BD
+        current_areas = get_current_areas()
+        raw_clean_lower = _norm(raw_clean).lower()
         
-        # Si no se encontró con sinónimos, intentar fuzzy matching
+        # Buscar coincidencia exacta o que contenga la palabra clave
+        exact_matches = []
+        for area in current_areas:
+            area_lower = _norm(area).lower()
+            if raw_clean_lower == area_lower:
+                exact_matches.append(area)
+            elif _is_whole_word(area_lower, raw_clean_lower):
+                exact_matches.append(area)
+        
+        if exact_matches:
+            # Priorizar áreas que NO contengan "datos" si el usuario no lo mencionó
+            if 'datos' not in raw_clean_lower:
+                solo_desarrollo = [a for a in exact_matches if 'datos' not in _norm(a).lower()]
+                if solo_desarrollo:
+                    result["area"] = solo_desarrollo[0]
+                else:
+                    result["area"] = exact_matches[0]
+            else:
+                result["area"] = exact_matches[0]
+        
+        # Si no hay coincidencia exacta, usar fuzzy matching pero filtrar
         if not result.get("area"):
-            area_matches = _fuzzy_match(raw, get_current_areas(), threshold=0.4)
+            area_matches = _fuzzy_match(raw_clean, current_areas, threshold=0.5)
             if area_matches:
-                result["area"] = area_matches[0]
+                # Si el usuario dijo "desarrollo" sin "datos", evitar "Desarrollo / datos"
+                if 'desarrollo' in raw_clean_lower and 'datos' not in raw_clean_lower:
+                    filtered_matches = [a for a in area_matches if 'datos' not in _norm(a).lower()]
+                    if filtered_matches:
+                        result["area"] = filtered_matches[0]
+                    else:
+                        # Si no hay otra opción y todos fueron filtrados, no asignar área funcional
+                        # (el usuario puede haber querido decir algo diferente)
+                        print(f"   ⏭️  No se asignó área funcional porque el usuario dijo 'desarrollo' sin 'datos' y no hay subáreas que coincidan")
+                else:
+                    result["area"] = area_matches[0]
+        
+        # Fallback: usar sinónimos solo si no se encontró nada
+        if not result.get("area"):
+            area_mapping = {
+                "datos": "Desarrollo / datos",
+                "desarrollo": None,  # Se maneja arriba con búsqueda en BD
+                "infraestructura": "Tecnología",
+                "calidad": "Servicios Generales",
+                "soporte": "Servicios Generales",
+                "diseño": "Diseño",
+                "gastronomía": "Gastronomía",
+                "cultura": "Cultura",
+                "salud": "Salud",
+                "construcción": "Construcción",
+                "transporte": "Transporte",
+                "turismo": "Turismo",
+                "finanzas": "Finanzas",
+                "rrhh": "Recursos Humanos",
+                "tecnología": "Tecnología",
+            }
+            
+            for syn, canon in current_inv_synonyms.items():
+                if _is_whole_word(raw_clean, syn) and canon in area_mapping:
+                    mapped_area = area_mapping[canon]
+                    if mapped_area:
+                        result["area"] = mapped_area
+                        break
+                    elif canon == "desarrollo":
+                        # Para desarrollo, buscar en BD
+                        dev_areas = [a for a in current_areas if 'desarrollo' in _norm(a).lower()]
+                        if dev_areas:
+                            # Preferir áreas que no tengan "datos" si el usuario no lo mencionó
+                            if 'datos' not in raw_clean_lower:
+                                solo_dev = [a for a in dev_areas if 'datos' not in _norm(a).lower()]
+                                if solo_dev:
+                                    result["area"] = solo_dev[0]
+                                else:
+                                    # Si no hay área solo "desarrollo" y el usuario no mencionó "datos", no asignar
+                                    print(f"   ⏭️  No se asignó área funcional porque el usuario dijo 'desarrollo' sin 'datos' y no hay subáreas que coincidan")
+                            else:
+                                result["area"] = dev_areas[0]
+                            break
     
     # Si el contexto es ubicación
     elif context == "location":
