@@ -14,6 +14,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Copiar archivo de dependencias
+COPY requirements.txt ./requirements.txt
+
+# Instalar herramientas base y construir ruedas (wheels)
+RUN pip install --upgrade pip setuptools wheel && \
+    pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt && \
+    pip install --no-cache-dir --no-index --find-links=/wheels -r requirements.txt
+
 # Requisitos primero (cache eficiente)
 COPY requirements.txt ./requirements.txt
 
