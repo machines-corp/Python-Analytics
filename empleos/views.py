@@ -23,7 +23,7 @@ class JobSearchView(APIView):
         roles = list(Job.objects.values_list("role", flat=True).distinct())
         include, exclude, salary_min, currency = parse_prompt(prompt, roles)
 
-        results, steps = decide_jobs(include, exclude, salary_min, currency, topn=topn)
+        results, steps, metadata = decide_jobs(include, exclude, salary_min, currency, topn=topn)
 
         return Response({
             "prompt": prompt,
@@ -112,7 +112,74 @@ def _merge_state_with_prompt(state: dict, prompt: str):
     changing_slot = state.get("changing_slot")
     next_slot = changing_slot if changing_slot else next_missing_slot(state)
     encouraging_response = None
+    action_intent = None  # Inicializar action_intent
     print(f"🔍 Slot siguiente: {next_slot} {'(cambiando)' if changing_slot else '(normal)'}")
+    
+    # Si estamos cambiando un slot, intentar parsear el nuevo valor directamente
+    if changing_slot:
+        parsed_changing = parse_simple_response(prompt, changing_slot)
+        if parsed_changing and changing_slot in parsed_changing:
+            state[changing_slot] = parsed_changing[changing_slot]
+            state.pop("changing_slot", None)
+            encouraging_response = get_encouraging_response(changing_slot, parsed_changing[changing_slot])
+            print(f"   ✅ Slot '{changing_slot}' actualizado durante cambio a: {parsed_changing[changing_slot]}")
+            print(f"📋 Estado actualizado: {state}")
+            print("="*80)
+            return {}, {}, encouraging_response, {"action": "slot_change_complete", "slot": changing_slot, "value": parsed_changing[changing_slot]}
+    
+    # Si el usuario dice directamente un valor cuando ya tiene un slot lleno del mismo tipo,
+    # interpretarlo como cambio (ej: dice "tecnología" cuando ya tiene industria "finanzas")
+    if not changing_slot and not action_intent:
+        # Verificar si el prompt parece ser un valor nuevo para un slot existente
+        from empleos.nlp import get_current_industries, get_current_areas, get_current_modalities
+        
+        available_industries = get_current_industries()
+        available_areas = get_current_areas()
+        available_modalities = get_current_modalities()
+        
+        prompt_lower = prompt.lower()
+        
+        # Si el usuario dice directamente una industria cuando ya tiene industria
+        if "industry" in state and state.get("industry"):
+            for ind in available_industries:
+                if ind.lower() in prompt_lower and state["industry"].lower() != ind.lower():
+                    # Intentar parsear como industria
+                    parsed_industry = parse_simple_response(prompt, "industry")
+                    if parsed_industry.get("industry"):
+                        state["industry"] = parsed_industry["industry"]
+                        encouraging_response = get_encouraging_response("industry", parsed_industry["industry"])
+                        print(f"   ✅ Detectado cambio implícito de industria: '{state.get('industry')}' → '{parsed_industry['industry']}'")
+                        print(f"📋 Estado actualizado: {state}")
+                        print("="*80)
+                        return {}, {}, encouraging_response, {"action": "slot_change_complete", "slot": "industry", "value": parsed_industry["industry"]}
+        
+        # Si el usuario dice directamente un área funcional cuando ya tiene área
+        if "area" in state and state.get("area"):
+            for area in available_areas:
+                if area.lower() in prompt_lower and state["area"].lower() != area.lower():
+                    # Intentar parsear como área
+                    parsed_area = parse_simple_response(prompt, "area")
+                    if parsed_area.get("area"):
+                        state["area"] = parsed_area["area"]
+                        encouraging_response = get_encouraging_response("area", parsed_area["area"])
+                        print(f"   ✅ Detectado cambio implícito de área: '{state.get('area')}' → '{parsed_area['area']}'")
+                        print(f"📋 Estado actualizado: {state}")
+                        print("="*80)
+                        return {}, {}, encouraging_response, {"action": "slot_change_complete", "slot": "area", "value": parsed_area["area"]}
+        
+        # Si el usuario dice directamente una modalidad cuando ya tiene modalidad
+        if "modality" in state and state.get("modality"):
+            for mod in available_modalities:
+                if mod.lower() in prompt_lower and state["modality"].lower() != mod.lower():
+                    # Intentar parsear como modalidad
+                    parsed_modality = parse_simple_response(prompt, "modality")
+                    if parsed_modality.get("modality"):
+                        state["modality"] = parsed_modality["modality"]
+                        encouraging_response = get_encouraging_response("modality", parsed_modality["modality"])
+                        print(f"   ✅ Detectado cambio implícito de modalidad: '{state.get('modality')}' → '{parsed_modality['modality']}'")
+                        print(f"📋 Estado actualizado: {state}")
+                        print("="*80)
+                        return {}, {}, encouraging_response, {"action": "slot_change_complete", "slot": "modality", "value": parsed_modality["modality"]}
     
     if next_slot:
         # Usar parsing contextual para el slot específico
@@ -418,6 +485,53 @@ class ChatMessage(APIView):
                     "filled": filtered_state
                 })
         
+        # Si se completó un cambio de slot (cuando el usuario da el nuevo valor directamente)
+        if action_intent and action_intent.get("action") == "slot_change_complete":
+            slot_changed = action_intent.get("slot")
+            new_value = action_intent.get("value")
+            
+            slot_labels = {
+                "industry": "industria",
+                "area": "área funcional",
+                "modality": "modalidad",
+                "seniority": "nivel de experiencia",
+                "location": "ubicación"
+            }
+            slot_label = slot_labels.get(slot_changed, slot_changed)
+            
+            message = f"✅ Perfecto, he actualizado la {slot_label} a '{new_value}'. "
+            if encouraging_response:
+                message = f"{encouraging_response}\n\n{message}"
+            
+            # Preguntar si quiere buscar empleos o agregar más información
+            nxt = next_missing_slot(conv.state)
+            if nxt:
+                slot_labels_next = {
+                    "industry": "industria",
+                    "area": "área funcional",
+                    "modality": "modalidad",
+                    "seniority": "nivel de experiencia",
+                    "location": "ubicación"
+                }
+                slot_label_next = slot_labels_next.get(nxt, nxt)
+                message += f"¿Quieres agregar más información sobre la {slot_label_next} o buscar empleos ahora?"
+            else:
+                message += "¿Quieres buscar empleos ahora o agregar más criterios?"
+            
+            # Filtrar solo los slots principales para el frontend
+            filtered_state = _get_filtered_state_for_frontend(conv.state)
+            print(f"📤 Enviando estado actualizado (slot_change_complete): {filtered_state}")
+            
+            conv.history.append({"role":"system","text": message})
+            conv.save()
+            return Response({
+                "type": "slot_change_complete", 
+                "message": message, 
+                "slot": slot_changed,
+                "value": new_value,
+                "filled": filtered_state
+            })
+        
         # Si el usuario quiere cambiar un slot específico
         if action_intent and action_intent.get("action") == "change_slot":
             slot_to_change = action_intent.get("slot")
@@ -431,18 +545,79 @@ class ChatMessage(APIView):
                     conv.state[slot_to_change] = parsed_new[slot_to_change]
                     conv.state.pop("changing_slot", None)  # Limpiar flag de cambio
                     conv.save()
-                    message = f"✅ Perfecto, he actualizado la {slot_to_change} a '{parsed_new[slot_to_change]}'. ¿Quieres agregar más información o ver empleos ahora?"
+                    
+                    slot_labels = {
+                        "industry": "industria",
+                        "area": "área funcional",
+                        "modality": "modalidad",
+                        "seniority": "nivel de experiencia",
+                        "location": "ubicación"
+                    }
+                    slot_label = slot_labels.get(slot_to_change, slot_to_change)
+                    message = f"✅ Perfecto, he actualizado la {slot_label} a '{parsed_new[slot_to_change]}'. "
+                    
+                    # Preguntar si quiere buscar empleos o agregar más información
+                    nxt = next_missing_slot(conv.state)
+                    if nxt:
+                        slot_labels_next = {
+                            "industry": "industria",
+                            "area": "área funcional",
+                            "modality": "modalidad",
+                            "seniority": "nivel de experiencia",
+                            "location": "ubicación"
+                        }
+                        slot_label_next = slot_labels_next.get(nxt, nxt)
+                        message += f"¿Quieres agregar más información sobre la {slot_label_next} o buscar empleos ahora?"
+                    else:
+                        message += "¿Quieres buscar empleos ahora o agregar más criterios?"
                 else:
                     # Si no se puede parsear, usar el valor directo
                     conv.state[slot_to_change] = new_value
                     conv.state.pop("changing_slot", None)  # Limpiar flag de cambio
                     conv.save()
-                    message = f"✅ Perfecto, he actualizado la {slot_to_change} a '{new_value}'. ¿Quieres agregar más información o ver empleos ahora?"
+                    
+                    slot_labels = {
+                        "industry": "industria",
+                        "area": "área funcional",
+                        "modality": "modalidad",
+                        "seniority": "nivel de experiencia",
+                        "location": "ubicación"
+                    }
+                    slot_label = slot_labels.get(slot_to_change, slot_to_change)
+                    message = f"✅ Perfecto, he actualizado la {slot_label} a '{new_value}'. "
+                    
+                    # Preguntar si quiere buscar empleos o agregar más información
+                    nxt = next_missing_slot(conv.state)
+                    if nxt:
+                        slot_labels_next = {
+                            "industry": "industria",
+                            "area": "área funcional",
+                            "modality": "modalidad",
+                            "seniority": "nivel de experiencia",
+                            "location": "ubicación"
+                        }
+                        slot_label_next = slot_labels_next.get(nxt, nxt)
+                        message += f"¿Quieres agregar más información sobre la {slot_label_next} o buscar empleos ahora?"
+                    else:
+                        message += "¿Quieres buscar empleos ahora o agregar más criterios?"
+                
+                # Filtrar solo los slots principales para el frontend
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
+                print(f"📤 Enviando estado actualizado (slot_change_complete): {filtered_state}")
+                
+                conv.history.append({"role":"system","text": message})
+                conv.save()
+                return Response({
+                    "type": "slot_change_complete", 
+                    "message": message, 
+                    "slot": slot_to_change,
+                    "filled": filtered_state
+                })
             else:
                 # Si no hay valor nuevo, preguntar por el nuevo valor y guardar que estamos cambiando este slot
                 slot_labels = {
                     "industry": "industria",
-                    "area": "área",
+                    "area": "área funcional",
                     "modality": "modalidad",
                     "seniority": "nivel de experiencia",
                     "location": "ubicación"
@@ -470,7 +645,78 @@ class ChatMessage(APIView):
         if action_intent and action_intent.get("action") == "show_jobs":
             print("\n✅ Usuario solicita ver empleos explícitamente")
             include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
-            results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=0, variety=False)
+            results, steps, metadata = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=0, variety=False)
+            
+            # Si no hay resultados relevantes, informar al usuario
+            if not results or not metadata.get("has_relevant_results", True):
+                # Analizar alternativas disponibles
+                from empleos.engine import analyze_available_alternatives
+                analysis = analyze_available_alternatives(include, exclude)
+                
+                # Construir mensaje informativo sobre qué filtros no tienen resultados
+                message = "😔 No encontré empleos que coincidan exactamente con los criterios que me has dado:\n\n"
+                
+                # Listar los filtros que se intentaron
+                filters_tried = []
+                if include.get("industry"):
+                    filters_tried.append(f"• **Industria**: {', '.join(include['industry'])}")
+                if include.get("area"):
+                    filters_tried.append(f"• **Área funcional**: {', '.join(include['area'])}")
+                if include.get("modality"):
+                    filters_tried.append(f"• **Modalidad**: {', '.join(include['modality'])}")
+                if include.get("seniority"):
+                    filters_tried.append(f"• **Experiencia**: {', '.join(include['seniority'])}")
+                if include.get("location"):
+                    filters_tried.append(f"• **Ubicación**: {', '.join(include['location'])}")
+                if include.get("transport"):
+                    filters_tried.append(f"• **Transporte**: Sí")
+                if include.get("accessibility"):
+                    filters_tried.append(f"• **Accesibilidad**: Sí")
+                
+                if filters_tried:
+                    message += "\n".join(filters_tried)
+                
+                # Agregar sugerencias específicas basadas en alternativas disponibles
+                if analysis.get("suggestions"):
+                    message += "\n\n" + "\n".join(analysis["suggestions"])
+                
+                # Agregar instrucciones sobre cómo cambiar slots
+                message += "\n\n🔄 **Para cambiar un criterio específico, puedes decirme:**\n"
+                message += "• 'cambiar industria' o 'cambiar industria a [nombre]'\n"
+                message += "• 'cambiar área' o 'cambiar área a [nombre]'\n"
+                message += "• 'cambiar modalidad' o 'cambiar modalidad a [nombre]'\n"
+                message += "• 'cambiar ubicación' o 'cambiar experiencia'\n"
+                message += "• O simplemente dime el nuevo valor que quieres (ej: 'tecnología' para cambiar la industria)"
+                
+                # Filtrar solo los slots principales para el frontend
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
+                print(f"📤 Enviando estado actualizado (no_results): {filtered_state}")
+                
+                conv.history.append({"role":"system","text": message})
+                conv.save()
+                return Response({
+                    "type":"no_results", 
+                    "message": message, 
+                    "filled": filtered_state,
+                    "alternatives": analysis.get("alternatives", []),
+                    "suggestions": analysis.get("suggestions", [])
+                })
+            
+            # Si hay resultados pero se relajaron algunos filtros, informar al usuario
+            relaxed_filters = metadata.get("relaxed_filters", [])
+            if relaxed_filters:
+                relaxed_names = {
+                    "industry": "industria",
+                    "area": "área funcional",
+                    "modality": "modalidad",
+                    "seniority": "nivel de experiencia",
+                    "location": "ubicación",
+                    "transport": "transporte",
+                    "accessibility": "accesibilidad"
+                }
+                relaxed_display = [relaxed_names.get(f, f) for f in relaxed_filters]
+                if relaxed_display:
+                    print(f"   ⚠️  Se relajaron algunos filtros: {relaxed_display}")
             
             # Obtener información de paginación
             pagination_info = get_job_pagination_info(include, exclude, sal_min, currency)
@@ -481,7 +727,24 @@ class ChatMessage(APIView):
             conv.save()
             
             # Mensaje con información de paginación
-            message = "¡Perfecto! Te dejo mis mejores sugerencias basadas en tus preferencias. 🎯"
+            message = "🎯 Te recomiendo estos empleos:"
+            if encouraging_response:
+                message = f"{encouraging_response}\n\n{message}"
+            
+            if relaxed_filters:
+                relaxed_names = {
+                    "industry": "industria",
+                    "area": "área funcional",
+                    "modality": "modalidad",
+                    "seniority": "nivel de experiencia",
+                    "location": "ubicación",
+                    "transport": "transporte",
+                    "accessibility": "accesibilidad"
+                }
+                relaxed_display = [relaxed_names.get(f, f) for f in relaxed_filters]
+                if relaxed_display:
+                    message += f"\n\nℹ️ *Nota: He ajustado algunos filtros ({', '.join(relaxed_display)}) para encontrar empleos relevantes.*"
+            
             if pagination_info["has_more"]:
                 message += f"\n\n💡 Si quieres ver más empleos, solo escribe 'más empleos' o 'muéstrame más'. Tengo {pagination_info['total_jobs']} empleos disponibles para ti."
             
@@ -507,16 +770,43 @@ class ChatMessage(APIView):
             include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
             pagination_info = get_job_pagination_info(include, exclude, sal_min, currency)
             
-            # Obtener el offset actual (si existe)
-            current_offset = conv.state.get("current_offset", 0)
-            variety = job_selection.get("variety", False)
+            # Obtener el offset actual (si existe, usar el siguiente, si no, empezar desde 0)
+            # Si no hay last_results, significa que es la primera búsqueda, empezar desde 0
+            # Si hay last_results, significa que ya se mostraron resultados, usar el offset guardado
+            if "last_results" not in conv.state or not conv.state.get("last_results"):
+                # Primera búsqueda, empezar desde 0
+                current_offset = 0
+            else:
+                # Ya hay resultados previos, usar el offset guardado
+                current_offset = conv.state.get("current_offset", 3)
+            
+            variety = action_intent.get("variety", False)
+            
+            print(f"🔍 Búsqueda de más empleos:")
+            print(f"   - Offset actual: {current_offset}")
+            print(f"   - Variety: {variety}")
+            print(f"   - Filtros: {include}")
             
             # Buscar más empleos con paginación
-            results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=current_offset, variety=variety)
+            results, steps, metadata = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=current_offset, variety=variety)
+            
+            # Si no hay más resultados relevantes, informar al usuario
+            if not results or not metadata.get("has_relevant_results", True):
+                message = "😔 No hay más empleos que coincidan con tus criterios actuales."
+                message += "\n\n💡 Puedes ajustar algunos filtros o cambiar algunos criterios. ¿Qué te gustaría modificar?"
+                
+                filtered_state = _get_filtered_state_for_frontend(conv.state)
+                conv.history.append({"role":"system","text": message})
+                conv.save()
+                return Response({
+                    "type": "no_more_results",
+                    "message": message,
+                    "filled": filtered_state
+                })
             
             if results:
-                # Actualizar offset para la próxima búsqueda
-                conv.state["current_offset"] = current_offset + 3
+                # Actualizar offset para la próxima búsqueda (incrementar por el número de resultados mostrados)
+                conv.state["current_offset"] = current_offset + len(results)
                 conv.state["last_results"] = _serialize_job_results(results)
                 conv.save()
                 
@@ -524,23 +814,29 @@ class ChatMessage(APIView):
                 if variety:
                     message = "¡Perfecto! Te muestro empleos diferentes para que tengas más opciones: 🎯"
                 else:
-                    message = "¡Aquí tienes más empleos que podrían interesarte: 📋"
+                    message = f"¡Aquí tienes {len(results)} empleos más que podrían interesarte: 📋"
+                
+                # Agregar mensaje si hay más disponibles
+                remaining = pagination_info["total_jobs"] - conv.state["current_offset"]
+                if remaining > 0:
+                    message += f"\n\n💡 Tengo {remaining} empleos más disponibles. Di 'buscar' o 'más empleos' para ver más."
                 
                 # Filtrar solo los slots principales para el frontend
                 filtered_state = _get_filtered_state_for_frontend(conv.state)
-                print(f"📤 Enviando estado actualizado (more_results): {filtered_state}")
+                print(f"📤 Enviando estado actualizado (more_jobs): {filtered_state}")
+                print(f"   - Nuevo offset: {conv.state['current_offset']}")
+                print(f"   - Resultados mostrados: {len(results)}")
                 
                 conv.history.append({"role":"system","text": message})
                 conv.save()
-                
                 return Response({
-                    "type": "more_results", 
-                    "results": results, 
+                    "type":"results",
+                    "results": results,
                     "trace": steps,
+                    "filled": filtered_state,
                     "pagination_info": pagination_info,
                     "current_offset": conv.state["current_offset"],
-                    "message": message,
-                    "filled": filtered_state
+                    "message": message
                 })
             else:
                 # No hay más empleos disponibles
@@ -553,7 +849,7 @@ class ChatMessage(APIView):
                 conv.history.append({"role":"system","text": message})
                 conv.save()
                 return Response({
-                    "type": "no_more_results", 
+                    "type": "no_more_results",
                     "message": message,
                     "filled": filtered_state
                 })
@@ -713,23 +1009,109 @@ class ChatMessage(APIView):
         # Si no faltan slots, devuelve recomendaciones
         print("\n✅ Todos los slots completos, generando recomendaciones")
         include, exclude, sal_min, currency = _build_filters_from_state(conv.state)
-        results, steps = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=0, variety=False)
+        results, steps, metadata = decide_jobs(include, exclude, sal_min, currency, topn=3, offset=0, variety=False)
+        
+        # Si no hay resultados relevantes, informar al usuario
+        if not results or not metadata.get("has_relevant_results", True):
+            # Analizar alternativas disponibles
+            from empleos.engine import analyze_available_alternatives
+            analysis = analyze_available_alternatives(include, exclude)
+            
+            # Construir mensaje informativo sobre qué filtros no tienen resultados
+            message = "😔 No encontré empleos que coincidan exactamente con los criterios que me has dado:\n\n"
+            
+            # Listar los filtros que se intentaron
+            filters_tried = []
+            if include.get("industry"):
+                filters_tried.append(f"• **Industria**: {', '.join(include['industry'])}")
+            if include.get("area"):
+                filters_tried.append(f"• **Área funcional**: {', '.join(include['area'])}")
+            if include.get("modality"):
+                filters_tried.append(f"• **Modalidad**: {', '.join(include['modality'])}")
+            if include.get("seniority"):
+                filters_tried.append(f"• **Experiencia**: {', '.join(include['seniority'])}")
+            if include.get("location"):
+                filters_tried.append(f"• **Ubicación**: {', '.join(include['location'])}")
+            if include.get("transport"):
+                filters_tried.append(f"• **Transporte**: Sí")
+            if include.get("accessibility"):
+                filters_tried.append(f"• **Accesibilidad**: Sí")
+            
+            if filters_tried:
+                message += "\n".join(filters_tried)
+            
+            # Agregar sugerencias específicas basadas en alternativas disponibles
+            if analysis.get("suggestions"):
+                message += "\n\n" + "\n".join(analysis["suggestions"])
+            
+            # Agregar instrucciones sobre cómo cambiar slots
+            message += "\n\n🔄 **Para cambiar un criterio específico, puedes decirme:**\n"
+            message += "• 'cambiar industria' o 'cambiar industria a [nombre]'\n"
+            message += "• 'cambiar área' o 'cambiar área a [nombre]'\n"
+            message += "• 'cambiar modalidad' o 'cambiar modalidad a [nombre]'\n"
+            message += "• 'cambiar ubicación' o 'cambiar experiencia'\n"
+            message += "• O simplemente dime el nuevo valor que quieres (ej: 'tecnología' para cambiar la industria)"
+            
+            # Filtrar solo los slots principales para el frontend
+            filtered_state = _get_filtered_state_for_frontend(conv.state)
+            print(f"📤 Enviando estado actualizado (no_results): {filtered_state}")
+            
+            conv.history.append({"role":"system","text": message})
+            conv.save()
+            return Response({
+                "type":"no_results", 
+                "message": message, 
+                "filled": filtered_state,
+                "alternatives": analysis.get("alternatives", []),
+                "suggestions": analysis.get("suggestions", [])
+            })
+        
+        # Si hay resultados pero se relajaron algunos filtros, informar al usuario
+        relaxed_filters = metadata.get("relaxed_filters", [])
+        if relaxed_filters:
+            relaxed_names = {
+                "industry": "industria",
+                "area": "área funcional",
+                "modality": "modalidad",
+                "seniority": "nivel de experiencia",
+                "location": "ubicación",
+                "transport": "transporte",
+                "accessibility": "accesibilidad"
+            }
+            relaxed_display = [relaxed_names.get(f, f) for f in relaxed_filters]
+            if relaxed_display:
+                print(f"   ⚠️  Se relajaron algunos filtros: {relaxed_display}")
         
         # Obtener información de paginación
         pagination_info = get_job_pagination_info(include, exclude, sal_min, currency)
         
         # Guardar resultados en el estado para selección posterior
         conv.state["last_results"] = _serialize_job_results(results)
-        conv.state["current_offset"] = 3  # Preparar para la próxima búsqueda
+        conv.state["current_offset"] = len(results)  # Preparar para la próxima búsqueda (usar el número de resultados mostrados)
         conv.save()
         
         # Mensaje final empático
-        final_message = "¡Excelente! Ya tengo toda la información que necesito. Te dejo mis mejores sugerencias:"
+        final_message = f"🎯 Te encontré {len(results)} empleos que coinciden con tus criterios:"
         if encouraging_response:
             final_message = f"{encouraging_response}\n\n{final_message}"
         
-        if pagination_info["has_more"]:
-            final_message += f"\n\n💡 Si quieres ver más empleos, solo escribe 'más empleos' o 'muéstrame más'. Tengo {pagination_info['total_jobs']} empleos disponibles para ti."
+        if relaxed_filters:
+            relaxed_names = {
+                "industry": "industria",
+                "area": "área funcional",
+                "modality": "modalidad",
+                "seniority": "nivel de experiencia",
+                "location": "ubicación",
+                "transport": "transporte",
+                "accessibility": "accesibilidad"
+            }
+            relaxed_display = [relaxed_names.get(f, f) for f in relaxed_filters]
+            if relaxed_display:
+                final_message += f"\n\nℹ️ *Nota: He ajustado algunos filtros ({', '.join(relaxed_display)}) para encontrar empleos relevantes.*"
+        
+        remaining = pagination_info["total_jobs"] - len(results)
+        if remaining > 0:
+            final_message += f"\n\n💡 Tengo {remaining} empleos más disponibles con estos criterios. Di 'buscar' o 'más empleos' para ver más opciones."
         
         # Filtrar solo los slots principales para el frontend
         filtered_state = _get_filtered_state_for_frontend(conv.state)

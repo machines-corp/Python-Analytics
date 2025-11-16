@@ -5,7 +5,7 @@ from .models import JobPosting
 
 SYNONYMS = {
     # Modalidades
-    "remoto": ["remoto", "teletrabajo", "desde casa", "home office", "trabajo remoto", "virtual"],
+    "remoto": ["remoto", "teletrabajo", "desde casa", "home office", "trabajo remoto", "virtual", "remota"],
     "híbrido": ["hibrido", "híbrido", "mixto", "combinado", "flexible"],
     "presencial": ["presencial", "en oficina", "oficina", "físico", "en persona"],
     
@@ -1055,7 +1055,7 @@ def parse_job_selection(text: str) -> dict:
 def parse_change_slot_intent(text: str) -> dict:
     """
     Detecta si el usuario quiere cambiar un slot específico.
-    Ejemplos: "cambiar industria", "quiero cambiar el área", "modificar la modalidad"
+    Ejemplos: "cambiar industria", "quiero cambiar el área", "modificar la modalidad", "cambiar a tecnología"
     """
     raw = _norm(text)
     result = {}
@@ -1067,34 +1067,57 @@ def parse_change_slot_intent(text: str) -> dict:
             r"cambiar\s+(el\s+)?sector",
             r"modificar\s+(la\s+)?industria",
             r"cambiar\s+industria\s+a\s+([a-záéíóúñ\s]+)",
+            r"cambiar\s+a\s+([a-záéíóúñ\s]+)\s+industria",
             r"quiero\s+cambiar\s+(la\s+)?industria",
+            r"cambiar\s+industria\s+por\s+([a-záéíóúñ\s]+)",
+            r"prefiero\s+([a-záéíóúñ\s]+)\s+industria",
+            r"otra\s+industria",
+            r"diferente\s+industria",
         ],
         "area": [
             r"cambiar\s+(el\s+)?area",
             r"cambiar\s+(la\s+)?area",
             r"modificar\s+(el\s+)?area",
             r"cambiar\s+area\s+a\s+([a-záéíóúñ\s]+)",
+            r"cambiar\s+area\s+por\s+([a-záéíóúñ\s]+)",
+            r"cambiar\s+(el\s+)?area\s+funcional",
             r"quiero\s+cambiar\s+(el\s+)?area",
+            r"otra\s+area",
+            r"diferente\s+area",
+            r"prefiero\s+([a-záéíóúñ\s]+)\s+area",
         ],
         "modality": [
             r"cambiar\s+(la\s+)?modalidad",
             r"modificar\s+(la\s+)?modalidad",
             r"cambiar\s+modalidad\s+a\s+([a-záéíóúñ\s]+)",
+            r"cambiar\s+modalidad\s+por\s+([a-záéíóúñ\s]+)",
             r"quiero\s+cambiar\s+(la\s+)?modalidad",
+            r"otra\s+modalidad",
+            r"diferente\s+modalidad",
+            r"prefiero\s+([a-záéíóúñ\s]+)\s+modalidad",
         ],
         "seniority": [
             r"cambiar\s+(el\s+)?nivel",
             r"cambiar\s+(la\s+)?experiencia",
             r"modificar\s+(el\s+)?nivel",
             r"cambiar\s+seniority",
+            r"cambiar\s+nivel\s+a\s+([a-záéíóúñ\s]+)",
+            r"cambiar\s+experiencia\s+a\s+([a-záéíóúñ\s]+)",
             r"quiero\s+cambiar\s+(el\s+)?nivel",
+            r"otro\s+nivel",
+            r"diferente\s+nivel",
         ],
         "location": [
             r"cambiar\s+(la\s+)?ubicacion",
             r"cambiar\s+(la\s+)?ciudad",
             r"modificar\s+(la\s+)?ubicacion",
             r"cambiar\s+ubicacion\s+a\s+([a-záéíóúñ\s]+)",
+            r"cambiar\s+ubicacion\s+por\s+([a-záéíóúñ\s]+)",
             r"quiero\s+cambiar\s+(la\s+)?ubicacion",
+            r"otra\s+ubicacion",
+            r"diferente\s+ubicacion",
+            r"sin\s+ubicacion",
+            r"sin\s+restriccion\s+de\s+ubicacion",
         ],
     }
     
@@ -1109,6 +1132,10 @@ def parse_change_slot_intent(text: str) -> dict:
                 if match.groups() and match.group(1):
                     result["new_value"] = match.group(1).strip()
                 return result
+    
+    # También detectar cuando el usuario dice directamente un valor nuevo sin mencionar "cambiar"
+    # pero el contexto indica que quiere cambiar (ej: si dice "tecnología" cuando ya tiene industria)
+    # Esto se manejará en _merge_state_with_prompt cuando haya un slot en modo "changing"
     
     return result
 
@@ -1155,13 +1182,16 @@ def parse_show_jobs_intent(text: str) -> dict:
 def parse_more_jobs_intent(text: str) -> dict:
     """
     Detecta si el usuario está pidiendo más empleos o diferentes empleos.
-    Ejemplos: "muéstrame más", "quiero ver otros", "diferentes empleos", "más opciones"
+    Ejemplos: "muéstrame más", "quiero ver otros", "diferentes empleos", "más opciones", "buscar"
     """
     raw = _norm(text)
     result = {}
     
     # Patrones para detectar solicitud de más empleos
     more_patterns = [
+        r"^buscar$",  # Solo "buscar"
+        r"^buscar\s+empleos?$",
+        r"^buscar\s+trabajos?$",
         r"mu[eé]strame\s+m[aá]s",
         r"quiero\s+ver\s+m[aá]s",
         r"m[aá]s\s+empleos",
@@ -1188,7 +1218,9 @@ def parse_more_jobs_intent(text: str) -> dict:
         r"cambiar\s+opciones",
         r"nuevas\s+opciones",
         r"nuevos\s+empleos",
-        r"nuevos\s+trabajos"
+        r"nuevos\s+trabajos",
+        r"siguiente\s+p[aá]gina",
+        r"continuar\s+buscando"
     ]
     
     # Buscar patrones de "más empleos"
